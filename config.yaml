@@ -1,0 +1,267 @@
+Title: Sigma to Wazuh Converter Config
+Sigma:
+  # root of the Sigma rules URL
+  BaseUrl: https://github.com/SigmaHQ/sigma/tree/master/rules
+  # Sigma rules location
+  RulesRoot: ../sigma/rules
+  # convert sigma experimental rules (yes|no)
+  ProcessExpimental: true
+  # Sigma rule IDs to never try and convert (list)
+  SkipIds:
+  # Ignore all "convert only's" and convert all rules (yes|no), overides all other convert_only's
+  # skip* will still be skipped
+  ConvertAll: false
+  # Convert only these Sigma categories (list)
+  ConvertCategories:
+  # Convert only these Sigma services (list)
+  ConvertServices:
+  # Convert only Sigma rules targeting these explicit products (list)
+  ConvertProducts:
+    - windows
+    - windows_defender
+    - zeek
+  # skip stuff (list)
+  SkipProducts:
+  SkipServices:
+  SkipCategories:
+Wazuh:
+  # file that Wazuh rules will be written to
+  RulesFile: ./sigma.xml
+  # where to start rule ID numbering
+  # if you change this variable and want existing rules renumbered, 
+  #   then delete the file specified by rule_id_file before the next run
+  RuleIdStart: 900000
+  # file to track Wazuh rule id to Sigma rule ID use
+  RuleIdFile: ./rule_ids.json
+  # Convert Sigma rule levels to Wazuh levels
+  Levels:
+    informational: 5
+    low: 7
+    medium: 10
+    high: 13
+    critical: 15
+  # Wazuh rule settings
+  Options:
+    # do not include the full log in the wazuh alert (yes|no)
+    NoFullLog: true
+    # enable Wazuh email per Sigma GUID (list)
+    SigmaIdEmail:
+    # have wazuh send an alert email (yes|no)
+    # if set to no, email_levels variable will be used
+    EmailAlert: false
+    # at what levels do we want to enable Wazuh email alerts (list)
+    EmailLevels:
+      - critical
+      - high
+  ######################################################
+  # Map Sigma GUID or [logsource][product] to Wazuh if_sid dependencies
+  #
+  # NOTE: This can cause Wazuh to go Out of Memory due to the number of associations between rules using if_group
+  #
+  # if_group takes precedence over if_sid below
+  IdMaps:
+    SigmaIdToWazuhGroup:
+    SigmaIdToWazuhId:
+    ProductServiceToWazuhGroup:
+    ######################################################
+    # Sigma logsource.service will be matched before logsource.product
+    ProductServiceToWazuhId:
+      windows: 18100, 60000, 60001, 60002, 60003, 60004, 60006, 60007, 60008, 60009, 60010, 60011, 60012
+      windefend: 60005
+      Microsoft Windows Defender: 60005
+      sysmon: 184665, 185000, 185001, 185002, 185003, 185004, 185005, 185006, 185007, 185008, 185009, 185010, 185011, 185012, 185013, 184666, 184667, 184676, 184677, 184678, 184686, 184687, 184696, 184697, 184698, 184706, 184707, 184716, 184717, 184726, 184727, 184736, 184737, 184746, 184747, 184766, 184767, 184776
+  ######################################################
+  # Sigma to Wazuh field name mappings
+  # section should match the sigma product field; e.g. windows, linux, mac, apache, check point fw1 
+  # section/product should be lower case
+  FieldMaps:
+    Windows:
+      Accesses: win.eventdata.accesses
+      AccessList: win.eventdata.accessList
+      AccessMask: win.eventdata.accessMask
+      AccountName: win.eventdata.targetUserName
+      Action: win.eventdata.action
+      AllowedToDelegateTo: win.eventdata.allowedToDelegateTo
+      Application: win.eventdata.application
+      ApplicationPath: win.eventdata.applicationPath
+      AttributeLDAPDisplayName: win.eventdata.attributeLDAPDisplayName
+      AttributeValue: win.eventdata.attributeValue
+      AuditPolicyChanges: win.evendata.auditPolicyChanges
+      AuditSourceName: win.eventdata.auditSourceName
+      AuthenticationPackage: win.eventdata.authenticationPackageName
+      AuthenticationPackageName: win.eventdata.authenticationPackageName
+      CallTrace: win.eventdata.callTrace
+      Caption: win.eventdata.caption
+      Channel: win.eventdata.channel
+      ChildImage: win.eventdata.image
+      CommandLine: win.eventdata.commandLine
+      Company: win.eventdata.company
+      ComputerName: win.system.computer
+      ContextInfo: win.system.contextInfo
+      CurrentDirectory: win.eventdata.currentDirectory
+      Description: win.eventdata.description
+      DestAddress: win.eventdata.destAddress
+      Destination: win.eventdata.destination
+      DestinationHostname: win.eventdata.destinationHostname
+      DestinationIp: win.eventdata.destinationIp
+      DestinationIsIpv6: win.eventdata.destinationIsIpv6
+      DestinationPort: win.eventdata.destinationPort
+      Details: win.eventdata.details
+      DeviceClassName: win.eventdata.deviceClassName
+      DeviceDescription: win.eventdata.deviceDescription
+      DeviceName: win.eventdata.deviceName
+      DestPort: win.eventdata.destinationPort
+      EngineVersion: win.eventdata.engineVersion
+      EventID: win.system.eventID
+      EventType: win.eventdata.eventType
+      FailureCode: win.eventdata.failureCode
+      FileVersion: win.eventdata.fileVersion
+      FilterName: win.evendata.filterName
+      FilterOrigin: win.eventdata.filterOrigin
+      FolderPath: win.eventdata.image
+      GrantedAccess: win.eventdata.grantedAccess
+      Hash: win.eventdata.hashes
+      Hashes: win.eventdata.hashes
+      HostApplication: win.eventdata.hostApplication
+      HostName: win.eventdata.hostName
+      HostVersion: win.eventdata.hostVersion
+      Image: win.eventdata.image
+      ImageName: win.evendata.imageName
+      ImagePath: win.eventdata.imagePath
+      ImageLoaded: win.eventdata.imageLoaded
+      ImpHash: win.eventdata.impHash
+      ImpersonationLevel: win.eventdata.impersonationLevel
+      Initiated: win.eventdata.initiated
+      IntegrityLevel: win.eventdata.integrityLevel
+      IpAddress: win.eventdata.ipAddress
+      KeyLength: win.eventdata.keyLength
+      Keywords: win.eventdata.keywords
+      LayerRTID: win.eventdata.layerRTID
+      Level: win.system.level
+      LogonGuid: win.eventdata.logonGuid
+      LogonId: win.eventdata.logonId
+      LogonProcessName: win.eventdata.logonProcessName
+      LogonType: win.eventdata.logonType
+      md5: win.eventdata.hashes
+      Message: win.system.message
+      ModifyingApplication: win.system.modifyingApplication
+      NewName: win.eventdata.newName
+      NewTargetUserName: win.evendata.newTargetUserName
+      NewUacValue: win.eventdata.newUacValue
+      NewValue: win.eventdata.newValue
+      ObjectClass: win.eventdata.objectClass
+      ObjectName: win.eventdata.objectName
+      ObjectServer: win.eventdata.objectServer
+      ObjectType: win.eventdata.objectType
+      ObjectValueName: win.eventdata.objectValueName
+      OldUacValue: win.eventdata.oldUacValue
+      Origin: win.eventdata.origin
+      OriginalFileName: win.eventdata.originalFileName
+      PackageName: win.eventdata.packageName
+      Param1: win.evendata.param1
+      Param2: win.evendata.param2
+      Param3: win.evendata.param3
+      Param4: win.evendata.Param4
+      Param5: win.evendata.param5
+      Param6: win.evendata.param6
+      Param7: win.evendata.param7
+      Param8: win.evendata.Param8
+      Param9: win.evendata.Param9
+      Param10: win.evendata.Param10
+      ParentCommandLine: win.eventdata.parentCommandLine
+      ParentImage: win.eventdata.parentImage
+      ParentIntegrityLevel: win.eventdata.parentIntegrityLevel
+      ParentProcessGuid: win.eventdata.parentProcessGuid
+      ParentUser: win.eventdata.parentUser
+      Payload: win.eventdata.payload
+      PipeName: win.eventdata.pipeName
+      PrivilegeList: win.eventdata.privilegeList
+      ProcessCommandLine: win.eventdata.commandLine
+      ProcessID: win.eventdata.processId
+      ProcessName: win.eventdata.processName
+      ProcessPath: win.eventdata.processPath
+      Product: win.eventdata.product
+      Properties: win.eventdata.properties
+      ProviderContextName: win.evendata.providerContextName
+      ProviderName: win.eventdata.providerName
+      Provider_Name: win.eventdata.providerName
+      QueryName: win.eventdata.queryName
+      RelativeTargetName: win.eventdata.relativeTargetName
+      RemoteAddress: win.eventdata.remoteAddress
+      SamAccountName: win.eventdata.samAccountName
+      ScriptBlockText: win.eventdata.scriptBlockText
+      Service: win.eventdata.service
+      ServerName: win.eventdata.serverName
+      ServiceFileName: win.eventdata.serviceFileName
+      ServiceName: win.eventdata.serviceName
+      ServiceStartType: win.evendata.serviceStartType
+      ServiceType: win.evendata.serviceType
+      sha1: win.eventdata.hashes
+      sha256: win.eventdata.hashes
+      ShareName: win.eventdata.shareName
+      SidHistory: win.eventdata.sidHistory
+      Signed: win.eventdata.signed
+      Source: win.eventdata.source
+      Source_Name: win.eventdata.sourceName
+      SourceAddress: win.eventdata.sourceAddress
+      SourceImage: win.eventdata.sourceImage
+      SourceNetworkAddress: win.eventdata.ipAddress
+      SourcePort: win.eventdata.sourcePort
+      SourceWorkstation: win.eventdata.workstation
+      StartAddress: win.eventdata.startAddress
+      StartFunction: win.eventdata.startFunction
+      StartModule: win.eventdata.startModule
+      State: win.eventdata.state
+      Status: win.eventdata.status
+      SubcategoryGuid: win.eventdata.subcategoryGuid
+      SubjectAccountName: win.eventdata.subjectUserName
+      SubjectDomainName: win.eventdata.subjectDomainName
+      SubjectLogonId: win.eventdata.subjectLogonId
+      SubjectUserName: win.eventdata.subjectUserName
+      SubjectUserSid: win.eventdata.subjectUserSid
+      Task: win.eventdata.task
+      TaskName: win.eventdata.taskName
+      TargetFilename: win.eventdata.targetFilename
+      TargetImage: win.eventdata.targetImage
+      TargetLogonId: win.eventdata.targetLogonId
+      TargetName: win.eventdata.targetName
+      TargetObject: win.eventdata.targetObject
+      TargetOutboundUserName: win.eventdata.targetOutboundUserName
+      TargetProcessAddress: win.eventdata.targetProcessAddress
+      TargetServerName: win.eventdata.targetServerName
+      TargetSid: win.eventdata.targetSid
+      TargetUserName: win.eventdata.targetUserName
+      TargetUserSid: win.eventdata.targetUserSid
+      TicketEncryptionType: win.eventdata.ticketEncryptionType
+      TicketOptions: win.eventdata.ticketOptions
+      Type: win.eventdata.type
+      User: win.eventdata.user
+      UserName: win.eventdata.samAccountName
+      Value: win.evendata.value
+      WorkstationName: win.eventdata.workstationName
+    Zeek:
+      answers: data.answers
+      c-uri: data.c-uri
+      c-useragent: data.c-useragent
+      certificate.serial: data.certificate.serial
+      client_header_names: data.client_header_names
+      dst_ip: data.dstip
+      dst_port: data.dstport
+      endpoint: data.endpoint
+      id.orig_h: data.srcip
+      id.orig_p: data.srcport
+      id.resp_h: data.dstip
+      id.resp_p: data.dstport
+      name: data.name
+      method: data.method
+      operation: data.operation
+      path: data.path
+      qtype_name: data.qtype_name
+      query: data.query
+      request_body_len: data.request_body_len
+      resp_mime_types: data.resp_mime_types
+      src_ip: data.srcip
+      src_port: data.srcport
+      status_code: data.status_code
+      uri: data.uri
+      z: data.z
