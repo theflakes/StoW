@@ -1,4 +1,4 @@
-module flakes/stow
+module github.com/theflakes/StoW
 
 go 1.18
 
