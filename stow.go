@@ -170,6 +170,7 @@ func readYamlFile(path string, c *Config) {
 		fmt.Printf("Error parsing YAML: %v\n", err)
 		return
 	}
+	fmt.Println(sigmaRule.Detection)
 
 	rule := buildRule(sigmaRule, url)
 
