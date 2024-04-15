@@ -51,6 +51,9 @@ type Config struct {
 		} `yaml:"IdMaps"`
 		FieldMaps map[string]map[string]string `yaml:"FieldMaps"`
 	} `yaml:"Wazuh"`
+	// OR logic can force the creation of multiple Wazuh rules
+	// Because of this we need to track Sigma to Wazuh rule ids between runs
+	RuleIdMapState map[string][]int
 }
 
 func (c *Config) lookIn(path string, f os.FileInfo, err error) error {
