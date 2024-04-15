@@ -198,6 +198,7 @@ func main() {
 		fmt.Printf("Error reading file: %v\n", err)
 		return
 	}
+
 	var c Config
 	err = yaml.Unmarshal(data, &c)
 	if err != nil {
@@ -205,6 +206,17 @@ func main() {
 		return
 	}
 	fmt.Println(c.Wazuh.FieldMaps)
+
+	data, err = ioutil.ReadFile("./rule_ids.json")
+	if err != nil {
+		fmt.Printf("Error reading file: %v\n", err)
+		data = nil
+	}
+	err = yaml.Unmarshal(data, &c.RuleIdMapState)
+	if err != nil {
+		fmt.Printf("Error parsing YAML: %v\n", err)
+		data = nil
+	}
 
 	file, err := os.Create(c.Wazuh.RulesFile)
 	if err != nil {
