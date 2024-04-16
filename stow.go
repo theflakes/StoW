@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -78,12 +79,9 @@ type SigmaRule struct {
 		Product  string `yaml:"product"`
 		Category string `yaml:"category"`
 	} `yaml:"logsource"`
-	Detection struct {
-		FieldLogic interface{} `yaml:"selection"`
-		Condition  string      `yaml:"condition"`
-	} `yaml:"detection"`
-	FalsePositives []string `yaml:"falsepositives"`
-	Level          string   `yaml:"level"`
+	Detection      interface{} `yaml:"detection"`
+	FalsePositives []string    `yaml:"falsepositives"`
+	Level          string      `yaml:"level"`
 }
 
 type WazuhRule struct {
@@ -114,10 +112,28 @@ type WazuhRule struct {
 	} `xml:"field"`
 }
 
+func isIntInSlice(id int, ids []int) bool {
+	for _, i := range ids {
+		if i == id {
+			return true
+		}
+	}
+	return false
+}
+
+func trackIdMaps(sigmaId string, wazuhId int, c *Config) {
+	if ids, ok := c.RuleIdMapState[sigmaId]; ok {
+		if isIntInSlice(wazuhId, ids) {
+			return
+		}
+	}
+	c.RuleIdMapState[sigmaId] = append(c.RuleIdMapState[sigmaId], wazuhId)
+}
+
 func buildRule(sigma SigmaRule, url string) WazuhRule {
 	var rule WazuhRule
 
-	rule.ID = "0"
+	rule.ID = strconv.Itoa(0)
 	rule.Level = "0"
 	rule.Description = sigma.Title
 	rule.Info.Type = "link"
@@ -173,9 +189,10 @@ func readYamlFile(path string, c *Config) {
 		fmt.Printf("Error parsing YAML: %v\n", err)
 		return
 	}
-	fmt.Println(sigmaRule.Detection)
+	//fmt.Println(sigmaRule.Detection)
 
 	rule := buildRule(sigmaRule, url)
+	trackIdMaps(sigmaRule.ID, 0, c)
 
 	// Create an XML encoder that writes to the file
 	enc := xml.NewEncoder(&c.Wazuh.WriteRules)
@@ -193,12 +210,12 @@ func readYamlFile(path string, c *Config) {
 }
 
 func main() {
+	// Load Sigma and Wazuh config for rule processing
 	data, err := ioutil.ReadFile("./config.yaml")
 	if err != nil {
 		fmt.Printf("Error reading file: %v\n", err)
 		return
 	}
-
 	var c Config
 	err = yaml.Unmarshal(data, &c)
 	if err != nil {
@@ -207,6 +224,7 @@ func main() {
 	}
 	fmt.Println(c.Wazuh.FieldMaps)
 
+	// Load Sigma ID to Wazuh ID mappings
 	data, err = ioutil.ReadFile("./rule_ids.json")
 	if err != nil {
 		fmt.Printf("Error reading file: %v\n", err)
@@ -218,6 +236,7 @@ func main() {
 		data = nil
 	}
 
+	// Convert rules
 	file, err := os.Create(c.Wazuh.RulesFile)
 	if err != nil {
 		fmt.Printf("error: %v", err)
