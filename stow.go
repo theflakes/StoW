@@ -218,12 +218,12 @@ func buildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
 	rule.Info.Type = "link"
 	rule.Info.Value = url
 	// sometimes see "--" in sigma fields which will break xml when in comments
-	rule.Author = xml.Comment(strings.Replace(sigma.Author, "--", "-", -1))
-	rule.SigmaDescription = xml.Comment(strings.Replace(sigma.Description, "--", "-", -1))
-	rule.Date = xml.Comment(strings.Replace(sigma.Date, "--", "-", -1))
-	rule.Modified = xml.Comment(strings.Replace(sigma.Modified, "--", "-", -1))
-	rule.Status = xml.Comment(strings.Replace(sigma.Status, "--", "-", -1))
-	rule.SigmaID = xml.Comment(strings.Replace(sigma.ID, "--", "-", -1))
+	rule.Author = xml.Comment("     Author: " + strings.Replace(sigma.Author, "--", "-", -1))
+	rule.SigmaDescription = xml.Comment("Description: " + strings.Replace(sigma.Description, "--", "-", -1))
+	rule.Date = xml.Comment("    Created: " + strings.Replace(sigma.Date, "--", "-", -1))
+	rule.Modified = xml.Comment("   Modified: " + strings.Replace(sigma.Modified, "--", "-", -1))
+	rule.Status = xml.Comment("     Status: " + strings.Replace(sigma.Status, "--", "-", -1))
+	rule.SigmaID = xml.Comment("   Sigma ID: " + strings.Replace(sigma.ID, "--", "-", -1))
 	rule.Mitre.IDs = sigma.Tags
 
 	return rule
