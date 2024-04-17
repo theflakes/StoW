@@ -53,6 +53,7 @@ type Config struct {
 			ProductServiceToWazuhId    map[string]string `yaml:"ProductServiceToWazuhId"`
 		} `yaml:"IdMaps"`
 		FieldMaps map[string]map[string]string `yaml:"FieldMaps"`
+		XmlRules  WazuhGroup
 	} `yaml:"Wazuh"`
 	// OR logic can force the creation of multiple Wazuh rules
 	// Because of this we need to track Sigma to Wazuh rule ids between runs
@@ -66,7 +67,7 @@ type Config struct {
 func (c *Config) lookIn(path string, f os.FileInfo, err error) error {
 	if !f.IsDir() && strings.HasSuffix(path, ".yml") {
 		//fmt.Println("Found YAML file:", path)
-		readYamlFile(path, c)
+		ReadYamlFile(path, c)
 	}
 	return nil
 }
@@ -133,12 +134,15 @@ type SigmaRule struct {
 	Level          string      `yaml:"level"`
 }
 
+// outer rules xml
 type WazuhGroup struct {
-	XMLName xml.Name  `xml:"group"`
-	Name    string    `xml:"name,attr"`
-	Rule    WazuhRule `xml:"rule"`
+	XMLName xml.Name    `xml:"group"`
+	Name    string      `xml:"name,attr"`
+	Header  xml.Comment `xml:",comment"`
+	Rules   []WazuhRule `xml:"rule"`
 }
 
+// per rule xml
 type WazuhRule struct {
 	XMLName xml.Name `xml:"rule"`
 	ID      string   `xml:"id,attr"`
@@ -205,21 +209,23 @@ func trackIdMaps(sigmaId string, c *Config) string {
 	return strconv.Itoa(c.Wazuh.RuleIdStart)
 }
 
-func buildRule(wazuhXmlGroup WazuhGroup, sigma SigmaRule, url string, c *Config) WazuhRule {
-	wazuhXmlGroup.Rule.ID = trackIdMaps(sigma.ID, c)
-	wazuhXmlGroup.Rule.Level = "0"
-	wazuhXmlGroup.Rule.Description = sigma.Title
-	wazuhXmlGroup.Rule.Info.Type = "link"
-	wazuhXmlGroup.Rule.Info.Value = url
-	wazuhXmlGroup.Rule.Author = xml.Comment(sigma.Author)
-	wazuhXmlGroup.Rule.SigmaDescription = xml.Comment(sigma.Description)
-	wazuhXmlGroup.Rule.Date = xml.Comment(sigma.Date)
-	wazuhXmlGroup.Rule.Modified = xml.Comment(sigma.Modified)
-	wazuhXmlGroup.Rule.Status = xml.Comment(sigma.Status)
-	wazuhXmlGroup.Rule.SigmaID = xml.Comment(sigma.ID)
-	wazuhXmlGroup.Rule.Mitre.IDs = sigma.Tags
+func buildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
+	var rule WazuhRule
 
-	return wazuhXmlGroup.Rule
+	rule.ID = trackIdMaps(sigma.ID, c)
+	rule.Level = "0"
+	rule.Description = sigma.Title
+	rule.Info.Type = "link"
+	rule.Info.Value = url
+	rule.Author = xml.Comment(strings.Replace(sigma.Author, "--", "-", -1))
+	rule.SigmaDescription = xml.Comment(strings.Replace(sigma.Description, "--", "-", -1))
+	rule.Date = xml.Comment(strings.Replace(sigma.Date, "--", "-", -1))
+	rule.Modified = xml.Comment(strings.Replace(sigma.Modified, "--", "-", -1))
+	rule.Status = xml.Comment(strings.Replace(sigma.Status, "--", "-", -1))
+	rule.SigmaID = xml.Comment(strings.Replace(sigma.ID, "--", "-", -1))
+	rule.Mitre.IDs = sigma.Tags
+
+	return rule
 }
 
 // func addElement(enc *xml.Encoder, elementName, content string) error {
@@ -241,7 +247,7 @@ func buildRule(wazuhXmlGroup WazuhGroup, sigma SigmaRule, url string, c *Config)
 // 	return nil
 // }
 
-func readYamlFile(path string, c *Config) {
+func ReadYamlFile(path string, c *Config) {
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		fmt.Printf("Error reading file: %v\n", err)
@@ -262,23 +268,22 @@ func readYamlFile(path string, c *Config) {
 		fmt.Printf("Error parsing YAML: %v\n", err)
 		return
 	}
-	//fmt.Println(sigmaRule.Detection)
 
-	var wazuhXmlGroup WazuhGroup
-	rule := buildRule(wazuhXmlGroup, sigmaRule, url, c)
+	rule := buildRule(sigmaRule, url, c)
+	c.Wazuh.XmlRules.Rules = append(c.Wazuh.XmlRules.Rules, rule)
+}
 
+func WriteWazuhXmlRules(c *Config) {
 	// Create an XML encoder that writes to the file
 	enc := xml.NewEncoder(&c.Wazuh.WriteRules)
 	enc.Indent("", "  ")
 
 	// Encode the rule struct to XML
-	if err := enc.Encode(rule); err != nil {
-		fmt.Printf("error: %v\n", err)
-		return
+	if err := enc.Encode(c.Wazuh.XmlRules); err != nil {
+		fmt.Printf("error in converting to XML: %v\n", err)
 	}
 	if _, err := c.Wazuh.WriteRules.WriteString("\n"); err != nil {
-		fmt.Printf("error: %v\n", err)
-		return
+		fmt.Printf("error in writing XML rules: %v\n", err)
 	}
 }
 
@@ -297,6 +302,11 @@ func main() {
 	if err != nil {
 		fmt.Printf("Error walking the path %v: %v\n", c.Sigma.RulesRoot, err)
 	}
+
+	// build our xml file and write it
+	c.Wazuh.XmlRules.Name = "sigma,"
+	c.Wazuh.XmlRules.Header = xml.Comment("\n\tAuthor: Brian Kellogg\n\tSigma: https://github.com/SigmaHQ/sigma\n\tWazuh: https://wazuh.com\n\tAll Sigma rules licensed under DRL: https://github.com/SigmaHQ/sigma/blob/master/LICENSE.Detection.Rules.md")
+	WriteWazuhXmlRules(c)
 
 	// Convert map to json
 	//fmt.Println(c.Ids.SigmaToWazuh)
