@@ -24,3 +24,5 @@ go.work
 # auto generated files
 *.xml
 *.csv
+*.txt
+*.json
