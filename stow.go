@@ -229,25 +229,6 @@ func buildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
 	return rule
 }
 
-// func addElement(enc *xml.Encoder, elementName, content string) error {
-// 	// Start the element
-// 	if err := enc.EncodeToken(xml.StartElement{Name: xml.Name{Local: elementName}}); err != nil {
-// 		return err
-// 	}
-
-// 	// Add the content
-// 	if err := enc.EncodeToken(xml.CharData(content)); err != nil {
-// 		return err
-// 	}
-
-// 	// End the element
-// 	if err := enc.EncodeToken(xml.EndElement{Name: xml.Name{Local: elementName}}); err != nil {
-// 		return err
-// 	}
-
-// 	return nil
-// }
-
 func ReadYamlFile(path string, c *Config) {
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
