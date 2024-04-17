@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -58,6 +60,18 @@ type Config struct {
 		PreviousUsed []int            // Wazuh ids used in previous runs
 		CurrentUsed  []int            // array of all used Wazuh IDs this run
 		SigmaToWazuh map[string][]int // dict of sigma id to wazuh ids
+	}
+}
+
+func InitConfig() *Config {
+	return &Config{
+		Ids: struct {
+			PreviousUsed []int
+			CurrentUsed  []int
+			SigmaToWazuh map[string][]int
+		}{
+			SigmaToWazuh: make(map[string][]int),
+		},
 	}
 }
 
@@ -133,29 +147,40 @@ func isIntInSlice(id int, ids []int) bool {
 	return false
 }
 
-func trackIdMaps(sigmaId string, wazuhId int, c *Config) string {
+func addToMapStrToInts(c *Config, sigmaId string, wazuhId int) {
+	if _, ok := c.Ids.SigmaToWazuh[sigmaId]; !ok {
+		// If the key doesn't exist, add it to the map with a new slice
+		c.Ids.SigmaToWazuh[sigmaId] = []int{wazuhId}
+	}
+	// If the key exists, append to the slice
+	c.Ids.SigmaToWazuh[sigmaId] = append(c.Ids.SigmaToWazuh[sigmaId], wazuhId)
+}
+
+func trackIdMaps(sigmaId string, c *Config) string {
 	// has this Sigma rule been converted previously, reuse its Wazuh rule IDs
 	if ids, ok := c.Ids.SigmaToWazuh[sigmaId]; ok {
 		for id := range ids {
 			if !isIntInSlice(id, c.Ids.CurrentUsed) {
+				c.Ids.SigmaToWazuh[sigmaId] = append(c.Ids.SigmaToWazuh[sigmaId], id)
 				c.Ids.CurrentUsed = append(c.Ids.CurrentUsed, id)
 				return strconv.Itoa(id)
 			}
 		}
 	}
 	// new Sigma rule, find an unused Wazuh rule ID
-	for isIntInSlice(wazuhId, c.Ids.PreviousUsed) || isIntInSlice(wazuhId, c.Ids.CurrentUsed) {
-		wazuhId++
+	for isIntInSlice(c.Wazuh.RuleIdStart, c.Ids.PreviousUsed) || isIntInSlice(c.Wazuh.RuleIdStart, c.Ids.CurrentUsed) {
+		c.Wazuh.RuleIdStart++
 	}
-	c.Ids.CurrentUsed = append(c.Ids.CurrentUsed, wazuhId)
-	c.Wazuh.RuleIdStart = wazuhId
-	return strconv.Itoa(wazuhId)
+	addToMapStrToInts(c, sigmaId, c.Wazuh.RuleIdStart)
+	//c.Ids.SigmaToWazuh[sigmaId] = append(c.Ids.SigmaToWazuh[sigmaId], c.Wazuh.RuleIdStart)
+	c.Ids.CurrentUsed = append(c.Ids.CurrentUsed, c.Wazuh.RuleIdStart)
+	return strconv.Itoa(c.Wazuh.RuleIdStart)
 }
 
 func buildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
 	var rule WazuhRule
 
-	rule.ID = trackIdMaps(sigma.ID, c.Wazuh.RuleIdStart, c)
+	rule.ID = trackIdMaps(sigma.ID, c)
 	rule.Level = "0"
 	rule.Description = sigma.Title
 	rule.Info.Type = "link"
@@ -237,16 +262,16 @@ func main() {
 		fmt.Printf("Error reading file: %v\n", err)
 		return
 	}
-	var c Config
+	c := InitConfig()
 	err = yaml.Unmarshal(data, &c)
 	if err != nil {
 		fmt.Printf("Error parsing YAML: %v\n", err)
 		return
 	}
-	fmt.Println(c.Wazuh.FieldMaps)
+	//fmt.Println(c.Wazuh.FieldMaps)
 
 	// Load Sigma ID to Wazuh ID mappings
-	data, err = ioutil.ReadFile("./rule_ids.json")
+	data, err = ioutil.ReadFile(c.Wazuh.RuleIdFile)
 	if err != nil {
 		fmt.Printf("Error reading file: %v\n", err)
 		data = nil
@@ -256,7 +281,7 @@ func main() {
 		fmt.Printf("Error parsing YAML: %v\n", err)
 		data = nil
 	}
-	initPreviousUsed(&c)
+	initPreviousUsed(c)
 
 	// Convert rules
 	file, err := os.Create(c.Wazuh.RulesFile)
@@ -270,5 +295,18 @@ func main() {
 	err = filepath.Walk(c.Sigma.RulesRoot, c.lookIn)
 	if err != nil {
 		fmt.Printf("Error walking the path %v: %v\n", c.Sigma.RulesRoot, err)
+	}
+
+	// Convert map to json
+	fmt.Println(c.Ids.SigmaToWazuh)
+	jsonData, err := json.Marshal(c.Ids.SigmaToWazuh)
+	fmt.Println(jsonData)
+	if err != nil {
+		log.Println(err)
+	}
+	// Write JSON data to a file
+	err = ioutil.WriteFile(c.Wazuh.RuleIdFile, jsonData, 0644)
+	if err != nil {
+		log.Fatal(err)
 	}
 }
