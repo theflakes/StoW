@@ -71,8 +71,14 @@ func (c *Config) lookIn(path string, f os.FileInfo, err error) error {
 	return nil
 }
 
+func initPreviousUsed(c *Config) {
+	for _, ids := range c.Ids.SigmaToWazuh {
+		c.Ids.PreviousUsed = append(c.Ids.PreviousUsed, ids...)
+	}
+}
+
 func InitConfig() *Config {
-	return &Config{
+	c := &Config{
 		Ids: struct {
 			PreviousUsed []int
 			CurrentUsed  []int
@@ -81,6 +87,32 @@ func InitConfig() *Config {
 			SigmaToWazuh: make(map[string][]int),
 		},
 	}
+
+	// Load Sigma and Wazuh config for rule processing
+	data, err := ioutil.ReadFile("./config.yaml")
+	if err != nil {
+		fmt.Printf("Error reading file: %v\n", err)
+	}
+	err = yaml.Unmarshal(data, &c)
+	if err != nil {
+		fmt.Printf("Error parsing YAML: %v\n", err)
+	}
+	//fmt.Println(c.Wazuh.FieldMaps)
+
+	// Load Sigma ID to Wazuh ID mappings
+	data, err = ioutil.ReadFile(c.Wazuh.RuleIdFile)
+	if err != nil {
+		fmt.Printf("Error reading file: %v\n", err)
+		data = nil
+	}
+	err = yaml.Unmarshal(data, c.Ids.SigmaToWazuh)
+	if err != nil {
+		fmt.Printf("Error parsing YAML: %v\n", err)
+		data = nil
+	}
+	initPreviousUsed(c)
+
+	return c
 }
 
 type SigmaRule struct {
@@ -128,12 +160,6 @@ type WazuhRule struct {
 		Type   string `xml:"type,attr"`
 		Value  string `xml:",chardata"`
 	} `xml:"field"`
-}
-
-func initPreviousUsed(c *Config) {
-	for _, ids := range c.Ids.SigmaToWazuh {
-		c.Ids.PreviousUsed = append(c.Ids.PreviousUsed, ids...)
-	}
 }
 
 func isIntInSlice(id int, ids []int) bool {
@@ -253,33 +279,7 @@ func readYamlFile(path string, c *Config) {
 }
 
 func main() {
-	// Load Sigma and Wazuh config for rule processing
-	data, err := ioutil.ReadFile("./config.yaml")
-	if err != nil {
-		fmt.Printf("Error reading file: %v\n", err)
-		return
-	}
 	c := InitConfig()
-	err = yaml.Unmarshal(data, &c)
-	if err != nil {
-		fmt.Printf("Error parsing YAML: %v\n", err)
-		return
-	}
-	//fmt.Println(c.Wazuh.FieldMaps)
-
-	// Load Sigma ID to Wazuh ID mappings
-	data, err = ioutil.ReadFile(c.Wazuh.RuleIdFile)
-	if err != nil {
-		fmt.Printf("Error reading file: %v\n", err)
-		data = nil
-	}
-	err = yaml.Unmarshal(data, c.Ids.SigmaToWazuh)
-	if err != nil {
-		fmt.Printf("Error parsing YAML: %v\n", err)
-		data = nil
-	}
-	initPreviousUsed(c)
-
 	// Convert rules
 	file, err := os.Create(c.Wazuh.RulesFile)
 	if err != nil {
