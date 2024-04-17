@@ -63,6 +63,14 @@ type Config struct {
 	}
 }
 
+func (c *Config) lookIn(path string, f os.FileInfo, err error) error {
+	if !f.IsDir() && strings.HasSuffix(path, ".yml") {
+		//fmt.Println("Found YAML file:", path)
+		readYamlFile(path, c)
+	}
+	return nil
+}
+
 func InitConfig() *Config {
 	return &Config{
 		Ids: struct {
@@ -73,14 +81,6 @@ func InitConfig() *Config {
 			SigmaToWazuh: make(map[string][]int),
 		},
 	}
-}
-
-func (c *Config) lookIn(path string, f os.FileInfo, err error) error {
-	if !f.IsDir() && strings.HasSuffix(path, ".yml") {
-		//fmt.Println("Found YAML file:", path)
-		readYamlFile(path, c)
-	}
-	return nil
 }
 
 type SigmaRule struct {
@@ -131,10 +131,8 @@ type WazuhRule struct {
 }
 
 func initPreviousUsed(c *Config) {
-	for ids := range c.Ids.SigmaToWazuh {
-		for id := range ids {
-			c.Ids.PreviousUsed = append(c.Ids.PreviousUsed, id)
-		}
+	for _, ids := range c.Ids.SigmaToWazuh {
+		c.Ids.PreviousUsed = append(c.Ids.PreviousUsed, ids...)
 	}
 }
 
@@ -148,9 +146,10 @@ func isIntInSlice(id int, ids []int) bool {
 }
 
 func addToMapStrToInts(c *Config, sigmaId string, wazuhId int) {
+	// If the key doesn't exist, add it to the map with a new slice
 	if _, ok := c.Ids.SigmaToWazuh[sigmaId]; !ok {
-		// If the key doesn't exist, add it to the map with a new slice
 		c.Ids.SigmaToWazuh[sigmaId] = []int{wazuhId}
+		return
 	}
 	// If the key exists, append to the slice
 	c.Ids.SigmaToWazuh[sigmaId] = append(c.Ids.SigmaToWazuh[sigmaId], wazuhId)
@@ -159,9 +158,8 @@ func addToMapStrToInts(c *Config, sigmaId string, wazuhId int) {
 func trackIdMaps(sigmaId string, c *Config) string {
 	// has this Sigma rule been converted previously, reuse its Wazuh rule IDs
 	if ids, ok := c.Ids.SigmaToWazuh[sigmaId]; ok {
-		for id := range ids {
+		for _, id := range ids {
 			if !isIntInSlice(id, c.Ids.CurrentUsed) {
-				c.Ids.SigmaToWazuh[sigmaId] = append(c.Ids.SigmaToWazuh[sigmaId], id)
 				c.Ids.CurrentUsed = append(c.Ids.CurrentUsed, id)
 				return strconv.Itoa(id)
 			}
@@ -172,7 +170,6 @@ func trackIdMaps(sigmaId string, c *Config) string {
 		c.Wazuh.RuleIdStart++
 	}
 	addToMapStrToInts(c, sigmaId, c.Wazuh.RuleIdStart)
-	//c.Ids.SigmaToWazuh[sigmaId] = append(c.Ids.SigmaToWazuh[sigmaId], c.Wazuh.RuleIdStart)
 	c.Ids.CurrentUsed = append(c.Ids.CurrentUsed, c.Wazuh.RuleIdStart)
 	return strconv.Itoa(c.Wazuh.RuleIdStart)
 }
@@ -276,7 +273,7 @@ func main() {
 		fmt.Printf("Error reading file: %v\n", err)
 		data = nil
 	}
-	err = yaml.Unmarshal(data, &c.Ids.SigmaToWazuh)
+	err = yaml.Unmarshal(data, c.Ids.SigmaToWazuh)
 	if err != nil {
 		fmt.Printf("Error parsing YAML: %v\n", err)
 		data = nil
@@ -298,9 +295,9 @@ func main() {
 	}
 
 	// Convert map to json
-	fmt.Println(c.Ids.SigmaToWazuh)
+	//fmt.Println(c.Ids.SigmaToWazuh)
 	jsonData, err := json.Marshal(c.Ids.SigmaToWazuh)
-	fmt.Println(jsonData)
+	//fmt.Println(jsonData)
 	if err != nil {
 		log.Println(err)
 	}
