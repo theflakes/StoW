@@ -64,7 +64,7 @@ type Config struct {
 	}
 }
 
-func (c *Config) lookIn(path string, f os.FileInfo, err error) error {
+func (c *Config) getSigmaRules(path string, f os.FileInfo, err error) error {
 	if !f.IsDir() && strings.HasSuffix(path, ".yml") {
 		//fmt.Println("Found YAML file:", path)
 		ReadYamlFile(path, c)
@@ -280,7 +280,7 @@ func main() {
 	c.Wazuh.WriteRules = *file
 	defer file.Close()
 
-	err = filepath.Walk(c.Sigma.RulesRoot, c.lookIn)
+	err = filepath.Walk(c.Sigma.RulesRoot, c.getSigmaRules)
 	if err != nil {
 		fmt.Printf("Error walking the path %v: %v\n", c.Sigma.RulesRoot, err)
 	}
