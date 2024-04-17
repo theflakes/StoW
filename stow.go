@@ -54,7 +54,11 @@ type Config struct {
 	} `yaml:"Wazuh"`
 	// OR logic can force the creation of multiple Wazuh rules
 	// Because of this we need to track Sigma to Wazuh rule ids between runs
-	RuleIdMapState map[string][]int
+	Ids struct {
+		PreviousUsed []int            // Wazuh ids used in previous runs
+		CurrentUsed  []int            // array of all used Wazuh IDs this run
+		SigmaToWazuh map[string][]int // dict of sigma id to wazuh ids
+	}
 }
 
 func (c *Config) lookIn(path string, f os.FileInfo, err error) error {
@@ -112,6 +116,14 @@ type WazuhRule struct {
 	} `xml:"field"`
 }
 
+func initPreviousUsed(c *Config) {
+	for ids := range c.Ids.SigmaToWazuh {
+		for id := range ids {
+			c.Ids.PreviousUsed = append(c.Ids.PreviousUsed, id)
+		}
+	}
+}
+
 func isIntInSlice(id int, ids []int) bool {
 	for _, i := range ids {
 		if i == id {
@@ -121,19 +133,29 @@ func isIntInSlice(id int, ids []int) bool {
 	return false
 }
 
-func trackIdMaps(sigmaId string, wazuhId int, c *Config) {
-	if ids, ok := c.RuleIdMapState[sigmaId]; ok {
-		if isIntInSlice(wazuhId, ids) {
-			return
+func trackIdMaps(sigmaId string, wazuhId int, c *Config) string {
+	// has this Sigma rule been converted previously, reuse its Wazuh rule IDs
+	if ids, ok := c.Ids.SigmaToWazuh[sigmaId]; ok {
+		for id := range ids {
+			if !isIntInSlice(id, c.Ids.CurrentUsed) {
+				c.Ids.CurrentUsed = append(c.Ids.CurrentUsed, id)
+				return strconv.Itoa(id)
+			}
 		}
 	}
-	c.RuleIdMapState[sigmaId] = append(c.RuleIdMapState[sigmaId], wazuhId)
+	// new Sigma rule, find an unused Wazuh rule ID
+	for isIntInSlice(wazuhId, c.Ids.PreviousUsed) || isIntInSlice(wazuhId, c.Ids.CurrentUsed) {
+		wazuhId++
+	}
+	c.Ids.CurrentUsed = append(c.Ids.CurrentUsed, wazuhId)
+	c.Wazuh.RuleIdStart = wazuhId
+	return strconv.Itoa(wazuhId)
 }
 
-func buildRule(sigma SigmaRule, url string) WazuhRule {
+func buildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
 	var rule WazuhRule
 
-	rule.ID = strconv.Itoa(0)
+	rule.ID = trackIdMaps(sigma.ID, c.Wazuh.RuleIdStart, c)
 	rule.Level = "0"
 	rule.Description = sigma.Title
 	rule.Info.Type = "link"
@@ -191,8 +213,7 @@ func readYamlFile(path string, c *Config) {
 	}
 	//fmt.Println(sigmaRule.Detection)
 
-	rule := buildRule(sigmaRule, url)
-	trackIdMaps(sigmaRule.ID, 0, c)
+	rule := buildRule(sigmaRule, url, c)
 
 	// Create an XML encoder that writes to the file
 	enc := xml.NewEncoder(&c.Wazuh.WriteRules)
@@ -230,11 +251,12 @@ func main() {
 		fmt.Printf("Error reading file: %v\n", err)
 		data = nil
 	}
-	err = yaml.Unmarshal(data, &c.RuleIdMapState)
+	err = yaml.Unmarshal(data, &c.Ids.SigmaToWazuh)
 	if err != nil {
 		fmt.Printf("Error parsing YAML: %v\n", err)
 		data = nil
 	}
+	initPreviousUsed(&c)
 
 	// Convert rules
 	file, err := os.Create(c.Wazuh.RulesFile)
