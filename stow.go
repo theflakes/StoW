@@ -97,7 +97,6 @@ func InitConfig() *Config {
 	if err != nil {
 		fmt.Printf("Error parsing YAML: %v\n", err)
 	}
-	//fmt.Println(c.Wazuh.FieldMaps)
 
 	// Load Sigma ID to Wazuh ID mappings
 	data, err = ioutil.ReadFile(c.Wazuh.RuleIdFile)
@@ -132,6 +131,12 @@ type SigmaRule struct {
 	Detection      interface{} `yaml:"detection"`
 	FalsePositives []string    `yaml:"falsepositives"`
 	Level          string      `yaml:"level"`
+}
+
+type WazuhGroup struct {
+	XMLName xml.Name  `xml:"group"`
+	Name    string    `xml:"name,attr"`
+	Rule    WazuhRule `xml:"rule"`
 }
 
 type WazuhRule struct {
@@ -200,23 +205,21 @@ func trackIdMaps(sigmaId string, c *Config) string {
 	return strconv.Itoa(c.Wazuh.RuleIdStart)
 }
 
-func buildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
-	var rule WazuhRule
+func buildRule(wazuhXmlGroup WazuhGroup, sigma SigmaRule, url string, c *Config) WazuhRule {
+	wazuhXmlGroup.Rule.ID = trackIdMaps(sigma.ID, c)
+	wazuhXmlGroup.Rule.Level = "0"
+	wazuhXmlGroup.Rule.Description = sigma.Title
+	wazuhXmlGroup.Rule.Info.Type = "link"
+	wazuhXmlGroup.Rule.Info.Value = url
+	wazuhXmlGroup.Rule.Author = xml.Comment(sigma.Author)
+	wazuhXmlGroup.Rule.SigmaDescription = xml.Comment(sigma.Description)
+	wazuhXmlGroup.Rule.Date = xml.Comment(sigma.Date)
+	wazuhXmlGroup.Rule.Modified = xml.Comment(sigma.Modified)
+	wazuhXmlGroup.Rule.Status = xml.Comment(sigma.Status)
+	wazuhXmlGroup.Rule.SigmaID = xml.Comment(sigma.ID)
+	wazuhXmlGroup.Rule.Mitre.IDs = sigma.Tags
 
-	rule.ID = trackIdMaps(sigma.ID, c)
-	rule.Level = "0"
-	rule.Description = sigma.Title
-	rule.Info.Type = "link"
-	rule.Info.Value = url
-	rule.Author = xml.Comment(sigma.Author)
-	rule.SigmaDescription = xml.Comment(sigma.Description)
-	rule.Date = xml.Comment(sigma.Date)
-	rule.Modified = xml.Comment(sigma.Modified)
-	rule.Status = xml.Comment(sigma.Status)
-	rule.SigmaID = xml.Comment(sigma.ID)
-	rule.Mitre.IDs = sigma.Tags
-
-	return rule
+	return wazuhXmlGroup.Rule
 }
 
 // func addElement(enc *xml.Encoder, elementName, content string) error {
@@ -261,7 +264,8 @@ func readYamlFile(path string, c *Config) {
 	}
 	//fmt.Println(sigmaRule.Detection)
 
-	rule := buildRule(sigmaRule, url, c)
+	var wazuhXmlGroup WazuhGroup
+	rule := buildRule(wazuhXmlGroup, sigmaRule, url, c)
 
 	// Create an XML encoder that writes to the file
 	enc := xml.NewEncoder(&c.Wazuh.WriteRules)
