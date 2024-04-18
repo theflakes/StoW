@@ -175,7 +175,7 @@ type WazuhRule struct {
 	} `xml:"field"`
 }
 
-func addToMapStrToInts(c *Config, sigmaId string, wazuhId int) {
+func AddToMapStrToInts(c *Config, sigmaId string, wazuhId int) {
 	// If the key doesn't exist, add it to the map with a new slice
 	if _, ok := c.Ids.SigmaToWazuh[sigmaId]; !ok {
 		c.Ids.SigmaToWazuh[sigmaId] = []int{wazuhId}
@@ -185,7 +185,7 @@ func addToMapStrToInts(c *Config, sigmaId string, wazuhId int) {
 	c.Ids.SigmaToWazuh[sigmaId] = append(c.Ids.SigmaToWazuh[sigmaId], wazuhId)
 }
 
-func trackIdMaps(sigmaId string, c *Config) string {
+func TrackIdMaps(sigmaId string, c *Config) string {
 	// has this Sigma rule been converted previously, reuse its Wazuh rule IDs
 	if ids, ok := c.Ids.SigmaToWazuh[sigmaId]; ok {
 		for _, id := range ids {
@@ -199,7 +199,7 @@ func trackIdMaps(sigmaId string, c *Config) string {
 	for slices.Contains(c.Ids.PreviousUsed, c.Wazuh.RuleIdStart) || slices.Contains(c.Ids.CurrentUsed, c.Wazuh.RuleIdStart) {
 		c.Wazuh.RuleIdStart++
 	}
-	addToMapStrToInts(c, sigmaId, c.Wazuh.RuleIdStart)
+	AddToMapStrToInts(c, sigmaId, c.Wazuh.RuleIdStart)
 	c.Ids.CurrentUsed = append(c.Ids.CurrentUsed, c.Wazuh.RuleIdStart)
 	return strconv.Itoa(c.Wazuh.RuleIdStart)
 }
@@ -268,7 +268,7 @@ func GetOptions(c *Config) string {
 func BuildRule(sigma *SigmaRule, url string, c *Config) WazuhRule {
 	var rule WazuhRule
 
-	rule.ID = trackIdMaps(sigma.ID, c)
+	rule.ID = TrackIdMaps(sigma.ID, c)
 	rule.Level = strconv.Itoa(GetLevel(sigma.Level, c))
 	rule.Description = sigma.Title
 	rule.Info.Type = "link"
