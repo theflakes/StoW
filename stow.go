@@ -127,6 +127,7 @@ type SigmaRule struct {
 	Tags        []string `yaml:"tags"`
 	LogSource   struct {
 		Product  string `yaml:"product"`
+		Service  string `yaml:"service"`
 		Category string `yaml:"category"`
 	} `yaml:"logsource"`
 	Detection      interface{} `yaml:"detection"`
@@ -163,6 +164,7 @@ type WazuhRule struct {
 	Description string `xml:"description"`
 	Options     string `xml:"options"`
 	Group       string `xml:"group"`
+	IfSid       string `xml:"if_sid"`
 	Fields      []struct {
 		Name   string `xml:"name,attr"`
 		Negate string `xml:"negate,attr"`
@@ -226,7 +228,14 @@ func GetLevel(sigmaLevel string, c *Config) int {
 	}
 }
 
-func buildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
+func GetIfSid(sigma SigmaRule, c *Config) string {
+	if sigma.LogSource.Service != "" {
+		return c.Wazuh.IdMaps.ProductServiceToWazuhId[sigma.LogSource.Service]
+	}
+	return c.Wazuh.IdMaps.ProductServiceToWazuhId[sigma.LogSource.Product]
+}
+
+func BuildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
 	var rule WazuhRule
 
 	rule.ID = trackIdMaps(sigma.ID, c)
@@ -242,6 +251,7 @@ func buildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
 	rule.Status = xml.Comment("     Status: " + strings.Replace(sigma.Status, "--", "-", -1))
 	rule.SigmaID = xml.Comment("   Sigma ID: " + strings.Replace(sigma.ID, "--", "-", -1))
 	rule.Mitre.IDs = sigma.Tags
+	rule.IfSid = GetIfSid(sigma, c)
 
 	return rule
 }
@@ -268,7 +278,7 @@ func ReadYamlFile(path string, c *Config) {
 		return
 	}
 
-	rule := buildRule(sigmaRule, url, c)
+	rule := BuildRule(sigmaRule, url, c)
 	c.Wazuh.XmlRules.Rules = append(c.Wazuh.XmlRules.Rules, rule)
 }
 
