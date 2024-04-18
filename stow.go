@@ -209,11 +209,28 @@ func trackIdMaps(sigmaId string, c *Config) string {
 	return strconv.Itoa(c.Wazuh.RuleIdStart)
 }
 
+func GetLevel(sigmaLevel string, c *Config) int {
+	switch sigmaLevel {
+	case "informational":
+		return c.Wazuh.Levels.Informational
+	case "low":
+		return c.Wazuh.Levels.Low
+	case "medium":
+		return c.Wazuh.Levels.Medium
+	case "high":
+		return c.Wazuh.Levels.High
+	case "critical":
+		return c.Wazuh.Levels.Critical
+	default:
+		return c.Wazuh.Levels.Informational
+	}
+}
+
 func buildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
 	var rule WazuhRule
 
 	rule.ID = trackIdMaps(sigma.ID, c)
-	rule.Level = "0"
+	rule.Level = strconv.Itoa(GetLevel(sigma.Level, c))
 	rule.Description = sigma.Title
 	rule.Info.Type = "link"
 	rule.Info.Value = url
