@@ -151,7 +151,7 @@ type WazuhRule struct {
 	Info    struct {
 		Type  string `xml:"type,attr"`
 		Value string `xml:",chardata"`
-	} `xml:"info"`
+	} `xml:"info,omitempty"`
 	Author           xml.Comment `xml:",comment"`
 	SigmaDescription xml.Comment `xml:",comment"`
 	Date             xml.Comment `xml:",comment"`
@@ -159,12 +159,13 @@ type WazuhRule struct {
 	Status           xml.Comment `xml:",comment"`
 	SigmaID          xml.Comment `xml:",comment"`
 	Mitre            struct {
-		IDs []string `xml:"id"`
-	} `xml:"mitre"`
+		IDs []string `xml:"id,omitempty"`
+	} `xml:"mitre,omitempty"`
 	Description string `xml:"description"`
-	Options     string `xml:"options"`
-	Group       string `xml:"group"`
-	IfSid       string `xml:"if_sid"`
+	Options     string `xml:"options,omitempty"`
+	Groups      string `xml:"groups,omitempty"`
+	IfSid       string `xml:"if_sid,omitempty"`
+	IfGroup     string `xml:"if_group,omitempty"`
 	Fields      []struct {
 		Name   string `xml:"name,attr"`
 		Negate string `xml:"negate,attr"`
@@ -228,27 +229,41 @@ func GetLevel(sigmaLevel string, c *Config) int {
 	}
 }
 
-func GetIfGrpSid(sigma SigmaRule, c *Config) string {
+func GetIfGrpSid(sigma SigmaRule, c *Config) (string, string) {
 	if c.Wazuh.SidGrpMaps.SigmaIdToWazuhGroup[sigma.ID] != "" {
-		return c.Wazuh.SidGrpMaps.SigmaIdToWazuhGroup[sigma.ID]
+		return "group", c.Wazuh.SidGrpMaps.SigmaIdToWazuhGroup[sigma.ID]
 
 	} else if c.Wazuh.SidGrpMaps.SigmaIdToWazuhId[sigma.ID] != "" {
-		return c.Wazuh.SidGrpMaps.SigmaIdToWazuhId[sigma.ID]
+		return "sid", c.Wazuh.SidGrpMaps.SigmaIdToWazuhId[sigma.ID]
 
 	} else if c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Service] != "" {
-		return c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Service]
+		return "group", c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Service]
 
 	} else if c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Product] != "" {
-		return c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Product]
+		return "group", c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Product]
 
 	} else if c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Service] != "" {
-		return c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Service]
+		return "sid", c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Service]
 
 	} else if c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Product] != "" {
-		return c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Product]
+		return "sid", c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Product]
 	}
 
-	return ""
+	return "sid", ""
+}
+
+func GetGroups(sigma SigmaRule) string {
+	var sources string
+	if sigma.LogSource.Category != "" {
+		sources = sigma.LogSource.Category + ","
+	}
+	if sigma.LogSource.Product != "" {
+		sources += sigma.LogSource.Product + ","
+	}
+	if sigma.LogSource.Service != "" {
+		sources += sigma.LogSource.Service + ","
+	}
+	return sources
 }
 
 func BuildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
@@ -267,7 +282,13 @@ func BuildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
 	rule.Status = xml.Comment("     Status: " + strings.Replace(sigma.Status, "--", "-", -1))
 	rule.SigmaID = xml.Comment("   Sigma ID: " + strings.Replace(sigma.ID, "--", "-", -1))
 	rule.Mitre.IDs = sigma.Tags
-	rule.IfSid = GetIfGrpSid(sigma, c)
+	rule.Groups = GetGroups(sigma)
+	ifType, value := GetIfGrpSid(sigma, c)
+	if ifType == "group" {
+		rule.IfGroup = value
+	} else {
+		rule.IfSid = value
+	}
 
 	return rule
 }
