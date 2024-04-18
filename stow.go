@@ -51,7 +51,7 @@ type Config struct {
 			SigmaIdToWazuhId           map[string]string `yaml:"SigmaIdToWazuhId"`
 			ProductServiceToWazuhGroup map[string]string `yaml:"ProductServiceToWazuhGroup"`
 			ProductServiceToWazuhId    map[string]string `yaml:"ProductServiceToWazuhId"`
-		} `yaml:"IdMaps"`
+		} `yaml:"SidGrpMaps"`
 		FieldMaps map[string]map[string]string `yaml:"FieldMaps"`
 		XmlRules  WazuhGroup
 	} `yaml:"Wazuh"`
@@ -228,11 +228,27 @@ func GetLevel(sigmaLevel string, c *Config) int {
 	}
 }
 
-func GetIfSid(sigma SigmaRule, c *Config) string {
-	if sigma.LogSource.Service != "" {
+func GetIfGrpSid(sigma SigmaRule, c *Config) string {
+	if c.Wazuh.SidGrpMaps.SigmaIdToWazuhGroup[sigma.ID] != "" {
+		return c.Wazuh.SidGrpMaps.SigmaIdToWazuhGroup[sigma.ID]
+
+	} else if c.Wazuh.SidGrpMaps.SigmaIdToWazuhId[sigma.ID] != "" {
+		return c.Wazuh.SidGrpMaps.SigmaIdToWazuhId[sigma.ID]
+
+	} else if c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Service] != "" {
+		return c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Service]
+
+	} else if c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Product] != "" {
+		return c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Product]
+
+	} else if c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Service] != "" {
 		return c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Service]
+
+	} else if c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Product] != "" {
+		return c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Product]
 	}
-	return c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Product]
+
+	return ""
 }
 
 func BuildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
@@ -251,7 +267,7 @@ func BuildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
 	rule.Status = xml.Comment("     Status: " + strings.Replace(sigma.Status, "--", "-", -1))
 	rule.SigmaID = xml.Comment("   Sigma ID: " + strings.Replace(sigma.ID, "--", "-", -1))
 	rule.Mitre.IDs = sigma.Tags
-	rule.IfSid = GetIfSid(sigma, c)
+	rule.IfSid = GetIfGrpSid(sigma, c)
 
 	return rule
 }
