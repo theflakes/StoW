@@ -266,6 +266,13 @@ func GetGroups(sigma SigmaRule) string {
 	return sources
 }
 
+func GetOptions(c *Config) string {
+	if c.Wazuh.Options.NoFullLog {
+		return "no_full_log"
+	}
+	return ""
+}
+
 func BuildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
 	var rule WazuhRule
 
@@ -282,6 +289,7 @@ func BuildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
 	rule.Status = xml.Comment("     Status: " + strings.Replace(sigma.Status, "--", "-", -1))
 	rule.SigmaID = xml.Comment("   Sigma ID: " + strings.Replace(sigma.ID, "--", "-", -1))
 	rule.Mitre.IDs = sigma.Tags
+	rule.Options = GetOptions(c)
 	rule.Groups = GetGroups(sigma)
 	ifType, value := GetIfGrpSid(sigma, c)
 	if ifType == "group" {
