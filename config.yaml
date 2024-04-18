@@ -59,7 +59,7 @@ Wazuh:
   # NOTE: This can cause Wazuh to go Out of Memory due to the number of associations between rules using if_group
   #
   # if_group takes precedence over if_sid below
-  IdMaps:
+  SidGrpMaps:
     SigmaIdToWazuhGroup:
     SigmaIdToWazuhId:
     ProductServiceToWazuhGroup:

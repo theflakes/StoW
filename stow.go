@@ -46,7 +46,7 @@ type Config struct {
 			EmailAlert   bool     `yaml:"EmailAlert"`
 			EmailLevels  []string `yaml:"EmailLevels"`
 		} `yaml:"Options"`
-		IdMaps struct {
+		SidGrpMaps struct {
 			SigmaIdToWazuhGroup        map[string]string `yaml:"SigmaIdToWazuhGroup"`
 			SigmaIdToWazuhId           map[string]string `yaml:"SigmaIdToWazuhId"`
 			ProductServiceToWazuhGroup map[string]string `yaml:"ProductServiceToWazuhGroup"`
@@ -230,9 +230,9 @@ func GetLevel(sigmaLevel string, c *Config) int {
 
 func GetIfSid(sigma SigmaRule, c *Config) string {
 	if sigma.LogSource.Service != "" {
-		return c.Wazuh.IdMaps.ProductServiceToWazuhId[sigma.LogSource.Service]
+		return c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Service]
 	}
-	return c.Wazuh.IdMaps.ProductServiceToWazuhId[sigma.LogSource.Product]
+	return c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Product]
 }
 
 func BuildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
