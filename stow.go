@@ -163,7 +163,7 @@ type WazuhRule struct {
 	} `xml:"mitre,omitempty"`
 	Description string `xml:"description"`
 	Options     string `xml:"options,omitempty"`
-	Groups      string `xml:"groups,omitempty"`
+	Groups      string `xml:"group,omitempty"`
 	IfSid       string `xml:"if_sid,omitempty"`
 	IfGroup     string `xml:"if_group,omitempty"`
 	Fields      []struct {
