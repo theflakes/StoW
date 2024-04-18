@@ -4,12 +4,18 @@ Sigma:
   BaseUrl: https://github.com/SigmaHQ/sigma/tree/master/rules
   # Sigma rules location
   RulesRoot: ../sigma/rules
-  # convert sigma experimental rules (yes|no)
-  ProcessExpimental: true
+  # Convert only rules with status, comment out status' you don't want converted
+  RuleStatus:
+    - stable
+    - test
+    - experimental
+    - deprecated
+    - unsupported
   # Sigma rule IDs to never try and convert (list)
   SkipIds:
   # Ignore all "convert only's" and convert all rules (yes|no), overides all other convert_only's
   # skip* will still be skipped
+  # rule status will also be considered when converting all
   ConvertAll: false
   # Convert only these Sigma categories (list)
   ConvertCategories:
@@ -97,8 +103,10 @@ Wazuh:
       CommandLine: win.eventdata.commandLine
       Company: win.eventdata.company
       ComputerName: win.system.computer
+      Contents: win.system.contents
       ContextInfo: win.system.contextInfo
       CurrentDirectory: win.eventdata.currentDirectory
+      Data: win.eventdata.data
       Description: win.eventdata.description
       DestAddress: win.eventdata.destAddress
       Destination: win.eventdata.destination
@@ -200,6 +208,8 @@ Wazuh:
       sha256: win.eventdata.hashes
       ShareName: win.eventdata.shareName
       SidHistory: win.eventdata.sidHistory
+      Signature: win.eventdata.signature
+      SignatureStatus: win.eventdata.signatureStatus
       Signed: win.eventdata.signed
       Source: win.eventdata.source
       Source_Name: win.eventdata.sourceName
@@ -244,6 +254,7 @@ Wazuh:
       c-uri: data.c-uri
       c-useragent: data.c-useragent
       certificate.serial: data.certificate.serial
+      cipher: data.cipher
       client_header_names: data.client_header_names
       dst_ip: data.dstip
       dst_port: data.dstport
@@ -259,9 +270,11 @@ Wazuh:
       qtype_name: data.qtype_name
       query: data.query
       request_body_len: data.request_body_len
+      request_type: data.request_type
       resp_mime_types: data.resp_mime_types
       src_ip: data.srcip
       src_port: data.srcport
+      service: data.service
       status_code: data.status_code
       uri: data.uri
       z: data.z

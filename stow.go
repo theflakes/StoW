@@ -11,22 +11,23 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
 	Sigma struct {
-		BaseUrl             string   `yaml:"BaseUrl"`
-		ConvertAll          bool     `yaml:"ConvertAll"`
-		ConvertCategories   []string `yaml:"ConvertCategories"`
-		ConvertProducts     []string `yaml:"ConvertProducts"`
-		ConvertServices     []string `yaml:"ConvertServices"`
-		ProcessExperimental bool     `yaml:"ProcessExperimental"`
-		RulesRoot           string   `yaml:"RulesRoot"`
-		SkipCategories      []string `yaml:"SkipCategories"`
-		SkipIds             []string `yaml:"SkipIds"`
-		SkipProducts        []string `yaml:"SkipProducts"`
-		SkipServices        []string `yaml:"SkipServices"`
+		BaseUrl           string   `yaml:"BaseUrl"`
+		ConvertAll        bool     `yaml:"ConvertAll"`
+		ConvertCategories []string `yaml:"ConvertCategories"`
+		ConvertProducts   []string `yaml:"ConvertProducts"`
+		ConvertServices   []string `yaml:"ConvertServices"`
+		RuleStatus        []string `yaml:"RuleStatus"`
+		RulesRoot         string   `yaml:"RulesRoot"`
+		SkipCategories    []string `yaml:"SkipCategories"`
+		SkipIds           []string `yaml:"SkipIds"`
+		SkipProducts      []string `yaml:"SkipProducts"`
+		SkipServices      []string `yaml:"SkipServices"`
 	} `yaml:"Sigma"`
 	Wazuh struct {
 		RulesFile   string `yaml:"RulesFile"`
@@ -174,15 +175,6 @@ type WazuhRule struct {
 	} `xml:"field"`
 }
 
-func isIntInSlice(id int, ids []int) bool {
-	for _, i := range ids {
-		if i == id {
-			return true
-		}
-	}
-	return false
-}
-
 func addToMapStrToInts(c *Config, sigmaId string, wazuhId int) {
 	// If the key doesn't exist, add it to the map with a new slice
 	if _, ok := c.Ids.SigmaToWazuh[sigmaId]; !ok {
@@ -197,14 +189,14 @@ func trackIdMaps(sigmaId string, c *Config) string {
 	// has this Sigma rule been converted previously, reuse its Wazuh rule IDs
 	if ids, ok := c.Ids.SigmaToWazuh[sigmaId]; ok {
 		for _, id := range ids {
-			if !isIntInSlice(id, c.Ids.CurrentUsed) {
+			if !slices.Contains(c.Ids.CurrentUsed, id) {
 				c.Ids.CurrentUsed = append(c.Ids.CurrentUsed, id)
 				return strconv.Itoa(id)
 			}
 		}
 	}
 	// new Sigma rule, find an unused Wazuh rule ID
-	for isIntInSlice(c.Wazuh.RuleIdStart, c.Ids.PreviousUsed) || isIntInSlice(c.Wazuh.RuleIdStart, c.Ids.CurrentUsed) {
+	for slices.Contains(c.Ids.PreviousUsed, c.Wazuh.RuleIdStart) || slices.Contains(c.Ids.CurrentUsed, c.Wazuh.RuleIdStart) {
 		c.Wazuh.RuleIdStart++
 	}
 	addToMapStrToInts(c, sigmaId, c.Wazuh.RuleIdStart)
@@ -213,7 +205,7 @@ func trackIdMaps(sigmaId string, c *Config) string {
 }
 
 func GetLevel(sigmaLevel string, c *Config) int {
-	switch sigmaLevel {
+	switch strings.ToLower(sigmaLevel) {
 	case "informational":
 		return c.Wazuh.Levels.Informational
 	case "low":
@@ -229,18 +221,18 @@ func GetLevel(sigmaLevel string, c *Config) int {
 	}
 }
 
-func GetIfGrpSid(sigma SigmaRule, c *Config) (string, string) {
+func GetIfGrpSid(sigma *SigmaRule, c *Config) (string, string) {
 	if c.Wazuh.SidGrpMaps.SigmaIdToWazuhGroup[sigma.ID] != "" {
-		return "group", c.Wazuh.SidGrpMaps.SigmaIdToWazuhGroup[sigma.ID]
+		return "grp", c.Wazuh.SidGrpMaps.SigmaIdToWazuhGroup[sigma.ID]
 
 	} else if c.Wazuh.SidGrpMaps.SigmaIdToWazuhId[sigma.ID] != "" {
 		return "sid", c.Wazuh.SidGrpMaps.SigmaIdToWazuhId[sigma.ID]
 
 	} else if c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Service] != "" {
-		return "group", c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Service]
+		return "grp", c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Service]
 
 	} else if c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Product] != "" {
-		return "group", c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Product]
+		return "grp", c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Product]
 
 	} else if c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Service] != "" {
 		return "sid", c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Service]
@@ -252,18 +244,18 @@ func GetIfGrpSid(sigma SigmaRule, c *Config) (string, string) {
 	return "sid", ""
 }
 
-func GetGroups(sigma SigmaRule) string {
-	var sources string
+func GetGroups(sigma *SigmaRule) string {
+	var groups string
 	if sigma.LogSource.Category != "" {
-		sources = sigma.LogSource.Category + ","
+		groups = sigma.LogSource.Category + ","
 	}
 	if sigma.LogSource.Product != "" {
-		sources += sigma.LogSource.Product + ","
+		groups += sigma.LogSource.Product + ","
 	}
 	if sigma.LogSource.Service != "" {
-		sources += sigma.LogSource.Service + ","
+		groups += sigma.LogSource.Service + ","
 	}
-	return sources
+	return groups
 }
 
 func GetOptions(c *Config) string {
@@ -273,7 +265,7 @@ func GetOptions(c *Config) string {
 	return ""
 }
 
-func BuildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
+func BuildRule(sigma *SigmaRule, url string, c *Config) WazuhRule {
 	var rule WazuhRule
 
 	rule.ID = trackIdMaps(sigma.ID, c)
@@ -292,13 +284,42 @@ func BuildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
 	rule.Options = GetOptions(c)
 	rule.Groups = GetGroups(sigma)
 	ifType, value := GetIfGrpSid(sigma, c)
-	if ifType == "group" {
+	if ifType == "grp" {
 		rule.IfGroup = value
 	} else {
 		rule.IfSid = value
 	}
 
 	return rule
+}
+
+func SkipRule(sigma *SigmaRule, c *Config) bool {
+	if slices.Contains(c.Sigma.SkipIds, strings.ToLower(sigma.ID)) {
+		log.Println("ID skipped")
+		return true
+	}
+	if !slices.Contains(c.Sigma.RuleStatus, strings.ToLower(sigma.Status)) {
+		log.Println("Status skipped")
+		return true
+	}
+	if c.Sigma.ConvertAll {
+		log.Println("Convert all rules")
+		return false
+	}
+	if slices.Contains(c.Sigma.ConvertCategories, strings.ToLower(sigma.LogSource.Category)) {
+		log.Println("Convert category")
+		return false
+	}
+	if slices.Contains(c.Sigma.ConvertServices, strings.ToLower(sigma.LogSource.Service)) {
+		log.Println("Convert service")
+		return false
+	}
+	if slices.Contains(c.Sigma.ConvertProducts, strings.ToLower(sigma.LogSource.Product)) {
+		log.Println("Convert product")
+		return false
+	}
+	log.Println("Default skip")
+	return true
 }
 
 func ReadYamlFile(path string, c *Config) {
@@ -323,7 +344,11 @@ func ReadYamlFile(path string, c *Config) {
 		return
 	}
 
-	rule := BuildRule(sigmaRule, url, c)
+	if SkipRule(&sigmaRule, c) {
+		return
+	}
+
+	rule := BuildRule(&sigmaRule, url, c)
 	c.Wazuh.XmlRules.Rules = append(c.Wazuh.XmlRules.Rules, rule)
 }
 
