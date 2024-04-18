@@ -293,7 +293,7 @@ func BuildRule(sigma *SigmaRule, url string, c *Config) WazuhRule {
 	return rule
 }
 
-func SkipRule(sigma *SigmaRule, c *Config) bool {
+func SkipSigmaRule(sigma *SigmaRule, c *Config) bool {
 	if slices.Contains(c.Sigma.SkipIds, strings.ToLower(sigma.ID)) {
 		log.Println("ID skipped")
 		return true
@@ -344,7 +344,7 @@ func ReadYamlFile(path string, c *Config) {
 		return
 	}
 
-	if SkipRule(&sigmaRule, c) {
+	if SkipSigmaRule(&sigmaRule, c) {
 		return
 	}
 
