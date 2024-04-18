@@ -281,7 +281,7 @@ func BuildRule(sigma SigmaRule, url string, c *Config) WazuhRule {
 	rule.Description = sigma.Title
 	rule.Info.Type = "link"
 	rule.Info.Value = url
-	// sometimes see "--" in sigma fields which will break xml when in comments
+	// sometimes we ee "--" in sigma fields which will break xml when in comments
 	rule.Author = xml.Comment("     Author: " + strings.Replace(sigma.Author, "--", "-", -1))
 	rule.SigmaDescription = xml.Comment("Description: " + strings.Replace(sigma.Description, "--", "-", -1))
 	rule.Date = xml.Comment("    Created: " + strings.Replace(sigma.Date, "--", "-", -1))
