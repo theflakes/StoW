@@ -148,6 +148,13 @@ type WazuhGroup struct {
 	Rules   []WazuhRule `xml:"rule"`
 }
 
+type Field struct {
+	Name   string `xml:"name,attr"`
+	Negate string `xml:"negate,attr"`
+	Type   string `xml:"type,attr"`
+	Value  string `xml:",chardata"`
+}
+
 // per rule xml
 type WazuhRule struct {
 	XMLName xml.Name `xml:"rule"`
@@ -171,12 +178,7 @@ type WazuhRule struct {
 	Groups      string   `xml:"group,omitempty"`
 	IfSid       string   `xml:"if_sid,omitempty"`
 	IfGroup     string   `xml:"if_group,omitempty"`
-	Fields      []struct {
-		Name   string `xml:"name,attr"`
-		Negate string `xml:"negate,attr"`
-		Type   string `xml:"type,attr"`
-		Value  string `xml:",chardata"`
-	} `xml:"field"`
+	Fields      []Field  `xml:"field"`
 }
 
 func AddToMapStrToInts(c *Config, sigmaId string, wazuhId int) {
@@ -280,6 +282,13 @@ func GetOptions(sigma *SigmaRule, c *Config) []string {
 	return options
 }
 
+func GetFields(sigma *SigmaRule, c *Config) []Field {
+	var field Field
+	var fields []Field
+	fields = append(fields, field)
+	return fields
+}
+
 func BuildRule(sigma *SigmaRule, url string, c *Config) WazuhRule {
 	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	var rule WazuhRule
@@ -305,6 +314,7 @@ func BuildRule(sigma *SigmaRule, url string, c *Config) WazuhRule {
 	} else {
 		rule.IfSid = value
 	}
+	rule.Fields = GetFields(sigma, c)
 
 	return rule
 }
