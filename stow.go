@@ -3,10 +3,12 @@ package main
 import (
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -342,6 +344,23 @@ func SkipSigmaRule(sigma *SigmaRule, c *Config) bool {
 	}
 }
 
+func GetTopLevelLogicCondition(sigma SigmaRule) map[string]interface{} {
+	detections := make(map[string]interface{})
+	v := reflect.ValueOf(sigma.Detection)
+	for _, k := range v.MapKeys() {
+		value := v.MapIndex(k)
+		key := k.Interface().(string)
+		detections[key] = value.Interface()
+	}
+	return detections
+}
+
+func PrintValues(detections map[string]interface{}) {
+	for k, v := range detections {
+		fmt.Printf("%v - %v\n", k, v)
+	}
+}
+
 func ReadYamlFile(path string, c *Config) {
 	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	data, err := ioutil.ReadFile(path)
@@ -368,6 +387,9 @@ func ReadYamlFile(path string, c *Config) {
 	if SkipSigmaRule(&sigmaRule, c) {
 		return
 	}
+
+	detections := GetTopLevelLogicCondition(sigmaRule)
+	PrintValues(detections)
 
 	rule := BuildRule(&sigmaRule, url, c)
 	c.Wazuh.XmlRules.Rules = append(c.Wazuh.XmlRules.Rules, rule)
