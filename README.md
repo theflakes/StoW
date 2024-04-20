@@ -22,6 +22,8 @@ config.yaml
 
 ## Compile and run
 ```
+# install golang on Ubuntu distros
+sudo apt install golang-go
 # compile into a smaller binary
 go build -ldflags="-s -w"
 # only do if you want an even smaller binary
