@@ -16,6 +16,7 @@ Problem(s) this probably won't fix by moving to GO:
 
 ## Configuration
 ```
+# Look in this file for configuration options
 config.yaml
 ```
 
@@ -25,5 +26,6 @@ config.yaml
 go build -ldflags="-s -w"
 # only do if you want an even smaller binary
 upx StoW
+# run it
 ./StoW
 ```
