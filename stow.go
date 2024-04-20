@@ -456,18 +456,14 @@ func getArgs(args []string, c *Config) (bool, bool) {
 	}
 	infoArgs := []string{"-i", "--info"}
 	debugArgs := []string{"-d", "--debug"}
-	info := false
-	debug := false
 	for _, arg := range args {
 		switch {
 		case slices.Contains(infoArgs, arg):
-			info = true
+			c.Info = true
 		case slices.Contains(debugArgs, arg):
-			debug = true
+			c.Info = true
+			c.Debug = true
 		}
-	}
-	if info || debug {
-		return info, debug
 	}
 	return c.Info, c.Debug
 }
