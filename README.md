@@ -13,3 +13,17 @@ Problem(s) this probably won't fix by moving to GO:
 - Working Sigma / Wazuh data structures and config moved to Yaml implemented
 - Reads in all Sigma rules
 - Creates skeleton Wazuh rules (no logic conversion)
+
+## Configuration
+```
+config.yaml
+```
+
+## Compile and run
+```
+# compile into a smaller binary
+go build -ldflags="-s -w"
+# only do if you want an even smaller binary
+upx StoW
+./StoW
+```

@@ -16,6 +16,7 @@ import (
 )
 
 type Config struct {
+	Debug bool `yaml:"Debug"`
 	Sigma struct {
 		BaseUrl           string   `yaml:"BaseUrl"`
 		ConvertAll        bool     `yaml:"ConvertAll"`
@@ -196,7 +197,8 @@ func TrackIdMaps(sigmaId string, c *Config) string {
 		}
 	}
 	// new Sigma rule, find an unused Wazuh rule ID
-	for slices.Contains(c.Ids.PreviousUsed, c.Wazuh.RuleIdStart) || slices.Contains(c.Ids.CurrentUsed, c.Wazuh.RuleIdStart) {
+	for slices.Contains(c.Ids.PreviousUsed, c.Wazuh.RuleIdStart) ||
+		slices.Contains(c.Ids.CurrentUsed, c.Wazuh.RuleIdStart) {
 		c.Wazuh.RuleIdStart++
 	}
 	AddToMapStrToInts(c, sigmaId, c.Wazuh.RuleIdStart)
@@ -222,6 +224,7 @@ func GetLevel(sigmaLevel string, c *Config) int {
 }
 
 func GetIfGrpSid(sigma *SigmaRule, c *Config) (string, string) {
+	// Get Wazuh if_group or if_sids dependencies for converted rules
 	if c.Wazuh.SidGrpMaps.SigmaIdToWazuhGroup[sigma.ID] != "" {
 		return "grp", c.Wazuh.SidGrpMaps.SigmaIdToWazuhGroup[sigma.ID]
 
@@ -366,8 +369,22 @@ func WriteWazuhXmlRules(c *Config) {
 	}
 }
 
+func getArgs(args []string, c *Config) bool {
+	if !c.Debug {
+		if len(args) == 1 {
+			return c.Debug
+		}
+		debug := args[1]
+		debugArgs := []string{"-d", "--debug"}
+		return slices.Contains(debugArgs, strings.ToLower(debug))
+	}
+	return c.Debug
+}
+
 func main() {
 	c := InitConfig()
+	c.Debug = getArgs(os.Args, c)
+
 	// Convert rules
 	file, err := os.Create(c.Wazuh.RulesFile)
 	if err != nil {

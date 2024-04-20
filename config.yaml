@@ -1,4 +1,5 @@
 Title: Sigma to Wazuh Converter Config
+Debug: false
 Sigma:
   # root of the Sigma rules URL
   BaseUrl: https://github.com/SigmaHQ/sigma/tree/master/rules
