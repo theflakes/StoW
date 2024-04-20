@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"encoding/xml"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -14,6 +13,17 @@ import (
 	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 )
+
+func LogIt(level string, msg string, err error) {
+	switch level {
+	case "error":
+		log.Printf("ERROR: %v - %v", msg, err)
+	case "warnging":
+		log.Printf(" WARN: %v", msg)
+	case "info":
+		log.Printf(" INFO: %v", msg)
+	}
+}
 
 type Config struct {
 	Debug bool `yaml:"Debug"`
@@ -68,7 +78,6 @@ type Config struct {
 
 func (c *Config) getSigmaRules(path string, f os.FileInfo, err error) error {
 	if !f.IsDir() && strings.HasSuffix(path, ".yml") {
-		//fmt.Println("Found YAML file:", path)
 		ReadYamlFile(path, c)
 	}
 	return nil
@@ -94,22 +103,22 @@ func InitConfig() *Config {
 	// Load Sigma and Wazuh config for rule processing
 	data, err := ioutil.ReadFile("./config.yaml")
 	if err != nil {
-		fmt.Printf("Error reading file: %v\n", err)
+		LogIt("error", "", err)
 	}
 	err = yaml.Unmarshal(data, &c)
 	if err != nil {
-		fmt.Printf("Error parsing YAML: %v\n", err)
+		LogIt("error", "", err)
 	}
 
 	// Load Sigma ID to Wazuh ID mappings
 	data, err = ioutil.ReadFile(c.Wazuh.RuleIdFile)
 	if err != nil {
-		fmt.Printf("Error reading file: %v\n", err)
+		LogIt("error", "", err)
 		data = nil
 	}
 	err = yaml.Unmarshal(data, c.Ids.SigmaToWazuh)
 	if err != nil {
-		fmt.Printf("Error parsing YAML: %v\n", err)
+		LogIt("error", "", err)
 		data = nil
 	}
 	initPreviousUsed(c)
@@ -276,7 +285,7 @@ func BuildRule(sigma *SigmaRule, url string, c *Config) WazuhRule {
 	rule.Description = sigma.Title
 	rule.Info.Type = "link"
 	rule.Info.Value = url
-	// sometimes we ee "--" in sigma fields which will break xml when in comments
+	// sometimes we see "--" in sigma fields which will break xml when in comments
 	rule.Author = xml.Comment("     Author: " + strings.Replace(sigma.Author, "--", "-", -1))
 	rule.SigmaDescription = xml.Comment("Description: " + strings.Replace(sigma.Description, "--", "-", -1))
 	rule.Date = xml.Comment("    Created: " + strings.Replace(sigma.Date, "--", "-", -1))
@@ -298,40 +307,33 @@ func BuildRule(sigma *SigmaRule, url string, c *Config) WazuhRule {
 
 func SkipSigmaRule(sigma *SigmaRule, c *Config) bool {
 	if slices.Contains(c.Sigma.SkipIds, strings.ToLower(sigma.ID)) {
-		log.Println("ID skipped")
 		return true
 	}
 	if !slices.Contains(c.Sigma.RuleStatus, strings.ToLower(sigma.Status)) {
-		log.Println("Status skipped")
 		return true
 	}
 	if c.Sigma.ConvertAll {
-		log.Println("Convert all rules")
 		return false
 	}
 	if slices.Contains(c.Sigma.ConvertCategories, strings.ToLower(sigma.LogSource.Category)) {
-		log.Println("Convert category")
 		return false
 	}
 	if slices.Contains(c.Sigma.ConvertServices, strings.ToLower(sigma.LogSource.Service)) {
-		log.Println("Convert service")
 		return false
 	}
 	if slices.Contains(c.Sigma.ConvertProducts, strings.ToLower(sigma.LogSource.Product)) {
-		log.Println("Convert product")
 		return false
 	}
-	log.Println("Default skip")
 	return true
 }
 
 func ReadYamlFile(path string, c *Config) {
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
-		fmt.Printf("Error reading file: %v\n", err)
+		LogIt("error", "", err)
 		return
 	}
-	fmt.Println(path)
+	LogIt("info", path, nil)
 	p := strings.Split(path, "/rules")
 	var url string
 	if len(p) > 1 {
@@ -343,7 +345,7 @@ func ReadYamlFile(path string, c *Config) {
 
 	err = yaml.Unmarshal(data, &sigmaRule)
 	if err != nil {
-		fmt.Printf("Error parsing YAML: %v\n", err)
+		LogIt("error", "", err)
 		return
 	}
 
@@ -362,10 +364,10 @@ func WriteWazuhXmlRules(c *Config) {
 
 	// Encode the rule struct to XML
 	if err := enc.Encode(c.Wazuh.XmlRules); err != nil {
-		fmt.Printf("error in converting to XML: %v\n", err)
+		LogIt("error", "", err)
 	}
 	if _, err := c.Wazuh.WriteRules.WriteString("\n"); err != nil {
-		fmt.Printf("error in writing XML rules: %v\n", err)
+		LogIt("error", "", err)
 	}
 }
 
@@ -388,7 +390,7 @@ func main() {
 	// Convert rules
 	file, err := os.Create(c.Wazuh.RulesFile)
 	if err != nil {
-		fmt.Printf("error: %v", err)
+		LogIt("error", "", err)
 		return
 	}
 	c.Wazuh.WriteRules = *file
@@ -396,7 +398,7 @@ func main() {
 
 	err = filepath.Walk(c.Sigma.RulesRoot, c.getSigmaRules)
 	if err != nil {
-		fmt.Printf("Error walking the path %v: %v\n", c.Sigma.RulesRoot, err)
+		LogIt("error", c.Sigma.RulesRoot, err)
 	}
 
 	// build our xml rule file and write it
@@ -405,15 +407,13 @@ func main() {
 	WriteWazuhXmlRules(c)
 
 	// Convert map to json
-	//fmt.Println(c.Ids.SigmaToWazuh)
 	jsonData, err := json.Marshal(c.Ids.SigmaToWazuh)
-	//fmt.Println(jsonData)
 	if err != nil {
-		log.Println(err)
+		LogIt("error", "", err)
 	}
 	// Write JSON data to a file
 	err = ioutil.WriteFile(c.Wazuh.RuleIdFile, jsonData, 0644)
 	if err != nil {
-		log.Fatal(err)
+		LogIt("error", "", err)
 	}
 }
