@@ -14,11 +14,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const DEBUG = "debug"
 const INFO = "info"
 const WARN = "warn"
 const ERROR = "error"
 
-func LogIt(level string, msg string, err error, debug bool) {
+func LogIt(level string, msg string, err error, info bool, debug bool) {
 	log.SetOutput(os.Stdout)
 	switch level {
 	case ERROR:
@@ -26,13 +27,18 @@ func LogIt(level string, msg string, err error, debug bool) {
 	case WARN:
 		log.Printf(" WARN: %v", msg)
 	case INFO:
-		if debug {
+		if info {
 			log.Printf(" INFO: %v", msg)
+		}
+	case DEBUG:
+		if debug {
+			log.Printf("DEBUG: %v", msg)
 		}
 	}
 }
 
 type Config struct {
+	Info  bool `yaml:"Info"`
 	Debug bool `yaml:"Debug"`
 	Sigma struct {
 		BaseUrl           string   `yaml:"BaseUrl"`
@@ -110,22 +116,22 @@ func InitConfig() *Config {
 	// Load Sigma and Wazuh config for rule processing
 	data, err := ioutil.ReadFile("./config.yaml")
 	if err != nil {
-		LogIt(ERROR, "", err, c.Debug)
+		LogIt(ERROR, "", err, c.Info, c.Debug)
 	}
 	err = yaml.Unmarshal(data, &c)
 	if err != nil {
-		LogIt(ERROR, "", err, c.Debug)
+		LogIt(ERROR, "", err, c.Info, c.Debug)
 	}
 
 	// Load Sigma ID to Wazuh ID mappings
 	data, err = ioutil.ReadFile(c.Wazuh.RuleIdFile)
 	if err != nil {
-		LogIt(ERROR, "", err, c.Debug)
+		LogIt(ERROR, "", err, c.Info, c.Debug)
 		data = nil
 	}
 	err = yaml.Unmarshal(data, c.Ids.SigmaToWazuh)
 	if err != nil {
-		LogIt(ERROR, "", err, c.Debug)
+		LogIt(ERROR, "", err, c.Info, c.Debug)
 		data = nil
 	}
 	initPreviousUsed(c)
@@ -320,37 +326,34 @@ func BuildRule(sigma *SigmaRule, url string, c *Config) WazuhRule {
 }
 
 func SkipSigmaRule(sigma *SigmaRule, c *Config) bool {
-	if slices.Contains(c.Sigma.SkipIds, strings.ToLower(sigma.ID)) {
-		LogIt(INFO, "Skip Sigma rule ID: "+sigma.ID, nil, c.Debug)
+	switch {
+	case slices.Contains(c.Sigma.SkipIds, strings.ToLower(sigma.ID)):
+		LogIt(INFO, "Skip Sigma rule ID: "+sigma.ID, nil, c.Info, c.Debug)
+		return true
+	case !slices.Contains(c.Sigma.RuleStatus, strings.ToLower(sigma.Status)):
+		LogIt(INFO, "Skip Sigma rule status: "+sigma.ID, nil, c.Info, c.Debug)
+		return true
+	case c.Sigma.ConvertAll:
+		return false
+	case slices.Contains(c.Sigma.ConvertCategories, strings.ToLower(sigma.LogSource.Category)):
+		return false
+	case slices.Contains(c.Sigma.ConvertServices, strings.ToLower(sigma.LogSource.Service)):
+		return false
+	case slices.Contains(c.Sigma.ConvertProducts, strings.ToLower(sigma.LogSource.Product)):
+		return false
+	default:
+		LogIt(INFO, "Skip Sigma rule default: "+sigma.ID, nil, c.Info, c.Debug)
 		return true
 	}
-	if !slices.Contains(c.Sigma.RuleStatus, strings.ToLower(sigma.Status)) {
-		LogIt(INFO, "Skip Sigma rule status: "+sigma.ID, nil, c.Debug)
-		return true
-	}
-	if c.Sigma.ConvertAll {
-		return false
-	}
-	if slices.Contains(c.Sigma.ConvertCategories, strings.ToLower(sigma.LogSource.Category)) {
-		return false
-	}
-	if slices.Contains(c.Sigma.ConvertServices, strings.ToLower(sigma.LogSource.Service)) {
-		return false
-	}
-	if slices.Contains(c.Sigma.ConvertProducts, strings.ToLower(sigma.LogSource.Product)) {
-		return false
-	}
-	LogIt(INFO, "Skip Sigma rule default: "+sigma.ID, nil, c.Debug)
-	return true
 }
 
 func ReadYamlFile(path string, c *Config) {
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
-		LogIt(ERROR, "", err, c.Debug)
+		LogIt(ERROR, "", err, c.Info, c.Debug)
 		return
 	}
-	LogIt(INFO, path, nil, c.Debug)
+	LogIt(INFO, path, nil, c.Info, c.Debug)
 	p := strings.Split(path, "/rules")
 	var url string
 	if len(p) > 1 {
@@ -362,7 +365,7 @@ func ReadYamlFile(path string, c *Config) {
 
 	err = yaml.Unmarshal(data, &sigmaRule)
 	if err != nil {
-		LogIt(ERROR, "", err, c.Debug)
+		LogIt(ERROR, "", err, c.Info, c.Debug)
 		return
 	}
 
@@ -381,33 +384,21 @@ func WriteWazuhXmlRules(c *Config) {
 
 	// Encode the rule struct to XML
 	if err := enc.Encode(c.Wazuh.XmlRules); err != nil {
-		LogIt(ERROR, "", err, c.Debug)
+		LogIt(ERROR, "", err, c.Info, c.Debug)
 	}
 	if _, err := c.Wazuh.WriteRules.WriteString("\n"); err != nil {
-		LogIt(ERROR, "", err, c.Debug)
+		LogIt(ERROR, "", err, c.Info, c.Debug)
 	}
-}
-
-func getArgs(args []string, c *Config) bool {
-	if !c.Debug {
-		if len(args) == 1 {
-			return c.Debug
-		}
-		debug := args[1]
-		debugArgs := []string{"-d", "--debug"}
-		return slices.Contains(debugArgs, strings.ToLower(debug))
-	}
-	return c.Debug
 }
 
 func main() {
 	c := InitConfig()
-	c.Debug = getArgs(os.Args, c)
+	c.Info, c.Debug = getArgs(os.Args, c)
 
 	// Convert rules
 	file, err := os.Create(c.Wazuh.RulesFile)
 	if err != nil {
-		LogIt(ERROR, "", err, c.Debug)
+		LogIt(ERROR, "", err, c.Info, c.Debug)
 		return
 	}
 	c.Wazuh.WriteRules = *file
@@ -415,7 +406,7 @@ func main() {
 
 	err = filepath.Walk(c.Sigma.RulesRoot, c.getSigmaRules)
 	if err != nil {
-		LogIt(ERROR, c.Sigma.RulesRoot, err, c.Debug)
+		LogIt(ERROR, c.Sigma.RulesRoot, err, c.Info, c.Debug)
 	}
 
 	// build our xml rule file and write it
@@ -426,11 +417,42 @@ func main() {
 	// Convert map to json
 	jsonData, err := json.Marshal(c.Ids.SigmaToWazuh)
 	if err != nil {
-		LogIt(ERROR, "", err, c.Debug)
+		LogIt(ERROR, "", err, c.Info, c.Debug)
 	}
 	// Write JSON data to a file
 	err = ioutil.WriteFile(c.Wazuh.RuleIdFile, jsonData, 0644)
 	if err != nil {
-		LogIt(ERROR, "", err, c.Debug)
+		LogIt(ERROR, "", err, c.Info, c.Debug)
 	}
 }
+
+func getArgs(args []string, c *Config) (bool, bool) {
+	if len(args) == 1 {
+		return c.Info, c.Debug
+	}
+	infoArgs := []string{"-i", "--info"}
+	debugArgs := []string{"-d", "--debug"}
+	info := false
+	debug := false
+	for _, arg := range args {
+		switch {
+		case slices.Contains(infoArgs, arg):
+			info = true
+		case slices.Contains(debugArgs, arg):
+			debug = true
+		}
+	}
+	if info || debug {
+		return info, debug
+	}
+	return c.Info, c.Debug
+}
+
+// func contains(slice []string, str string) bool {
+// 	for _, v := range slice {
+// 		if v == str {
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }
