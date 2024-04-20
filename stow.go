@@ -179,11 +179,11 @@ type WazuhRule struct {
 	Mitre            struct {
 		IDs []string `xml:"id,omitempty"`
 	} `xml:"mitre,omitempty"`
-	Description string `xml:"description"`
-	Options     string `xml:"options,omitempty"`
-	Groups      string `xml:"group,omitempty"`
-	IfSid       string `xml:"if_sid,omitempty"`
-	IfGroup     string `xml:"if_group,omitempty"`
+	Description string   `xml:"description"`
+	Options     []string `xml:"options,omitempty"`
+	Groups      string   `xml:"group,omitempty"`
+	IfSid       string   `xml:"if_sid,omitempty"`
+	IfGroup     string   `xml:"if_group,omitempty"`
 	Fields      []struct {
 		Name   string `xml:"name,attr"`
 		Negate string `xml:"negate,attr"`
@@ -277,11 +277,18 @@ func GetGroups(sigma *SigmaRule) string {
 	return groups
 }
 
-func GetOptions(c *Config) string {
+func GetOptions(sigma *SigmaRule, c *Config) []string {
+	var options []string
 	if c.Wazuh.Options.NoFullLog {
-		return "no_full_log"
+		options = append(options, "no_full_log")
+
 	}
-	return ""
+	if c.Wazuh.Options.EmailAlert &&
+		(slices.Contains(c.Wazuh.Options.SigmaIdEmail, sigma.ID) ||
+			slices.Contains(c.Wazuh.Options.EmailLevels, sigma.Level)) {
+		options = append(options, "alert_by_email")
+	}
+	return options
 }
 
 func BuildRule(sigma *SigmaRule, url string, c *Config) WazuhRule {
@@ -300,7 +307,7 @@ func BuildRule(sigma *SigmaRule, url string, c *Config) WazuhRule {
 	rule.Status = xml.Comment("     Status: " + strings.Replace(sigma.Status, "--", "-", -1))
 	rule.SigmaID = xml.Comment("   Sigma ID: " + strings.Replace(sigma.ID, "--", "-", -1))
 	rule.Mitre.IDs = sigma.Tags
-	rule.Options = GetOptions(c)
+	rule.Options = GetOptions(sigma, c)
 	rule.Groups = GetGroups(sigma)
 	ifType, value := GetIfGrpSid(sigma, c)
 	if ifType == "grp" {

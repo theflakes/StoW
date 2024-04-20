@@ -49,14 +49,14 @@ Wazuh:
     critical: 15
   # Wazuh rule settings
   Options:
-    # do not include the full log in the wazuh alert (yes|no)
+    # do not include the full log in the wazuh alert (true|false)
     NoFullLog: true
     # enable Wazuh email per Sigma GUID (list)
     SigmaIdEmail:
-    # have wazuh send an alert email (yes|no)
-    # if set to no, email_levels variable will be used
+    # have wazuh send an alert email (true|false)
     EmailAlert: false
     # at what levels do we want to enable Wazuh email alerts (list)
+    # disabled if SigmaIDEmail field above is false
     EmailLevels:
       - critical
       - high
