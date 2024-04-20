@@ -23,9 +23,9 @@ func LogIt(level string, msg string, err error, debug bool) {
 	switch level {
 	case ERROR:
 		log.Printf("ERROR: %v - %v", msg, err)
-	case "warnging":
+	case WARN:
 		log.Printf(" WARN: %v", msg)
-	case "info":
+	case INFO:
 		if debug {
 			log.Printf(" INFO: %v", msg)
 		}
