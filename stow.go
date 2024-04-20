@@ -15,6 +15,7 @@ import (
 )
 
 func LogIt(level string, msg string, err error, debug bool) {
+	log.SetOutput(os.Stdout)
 	switch level {
 	case "error":
 		log.Printf("ERROR: %v - %v", msg, err)
