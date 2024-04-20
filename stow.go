@@ -247,26 +247,22 @@ func GetLevel(sigmaLevel string, c *Config) int {
 
 func GetIfGrpSid(sigma *SigmaRule, c *Config) (string, string) {
 	// Get Wazuh if_group or if_sids dependencies for converted rules
-	if c.Wazuh.SidGrpMaps.SigmaIdToWazuhGroup[sigma.ID] != "" {
+	switch {
+	case c.Wazuh.SidGrpMaps.SigmaIdToWazuhGroup[sigma.ID] != "":
 		return "grp", c.Wazuh.SidGrpMaps.SigmaIdToWazuhGroup[sigma.ID]
-
-	} else if c.Wazuh.SidGrpMaps.SigmaIdToWazuhId[sigma.ID] != "" {
+	case c.Wazuh.SidGrpMaps.SigmaIdToWazuhId[sigma.ID] != "":
 		return "sid", c.Wazuh.SidGrpMaps.SigmaIdToWazuhId[sigma.ID]
-
-	} else if c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Service] != "" {
+	case c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Service] != "":
 		return "grp", c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Service]
-
-	} else if c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Product] != "" {
+	case c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Product] != "":
 		return "grp", c.Wazuh.SidGrpMaps.ProductServiceToWazuhGroup[sigma.LogSource.Product]
-
-	} else if c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Service] != "" {
+	case c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Service] != "":
 		return "sid", c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Service]
-
-	} else if c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Product] != "" {
+	case c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Product] != "":
 		return "sid", c.Wazuh.SidGrpMaps.ProductServiceToWazuhId[sigma.LogSource.Product]
+	default:
+		return "sid", ""
 	}
-
-	return "sid", ""
 }
 
 func GetGroups(sigma *SigmaRule) string {
