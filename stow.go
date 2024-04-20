@@ -15,41 +15,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const DEBUG = "debug"
-const INFO = "info"
-const WARN = "warn"
-const ERROR = "error"
-
-// Get function name for debugging
-func printPreviousFunctionName() string {
-	pc, _, _, _ := runtime.Caller(2) // 2 steps up the call stack
-	functionPath := runtime.FuncForPC(pc).Name()
-	return functionPath
-}
-
-func LogIt(level string, msg string, err error, info bool, debug bool) {
-	log.SetOutput(os.Stdout)
-	switch level {
-	case ERROR:
-		log.Printf("ERROR: %v - %v", msg, err)
-	case WARN:
-		log.Printf(" WARN: %v", msg)
-	case INFO:
-		if info {
-			log.Printf(" INFO: %v", msg)
-		}
-	case DEBUG:
-		if debug {
-			function := printPreviousFunctionName()
-			if msg != "" {
-				log.Printf("DEBUG: %v - %v", function, msg)
-			} else {
-				log.Printf("DEBUG: %v", function)
-			}
-		}
-	}
-}
-
 type Config struct {
 	Info  bool `yaml:"Info"`
 	Debug bool `yaml:"Debug"`
@@ -449,6 +414,10 @@ func main() {
 	}
 }
 
+/*****************************************************************
+UTILITY FUNCTIONS
+*/
+
 func getArgs(args []string, c *Config) (bool, bool) {
 	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	if len(args) == 1 {
@@ -466,6 +435,41 @@ func getArgs(args []string, c *Config) (bool, bool) {
 		}
 	}
 	return c.Info, c.Debug
+}
+
+const DEBUG = "debug"
+const INFO = "info"
+const WARN = "warn"
+const ERROR = "error"
+
+// Get function name for debugging
+func printPreviousFunctionName() string {
+	pc, _, _, _ := runtime.Caller(2) // 2 steps up the call stack
+	functionPath := runtime.FuncForPC(pc).Name()
+	return functionPath
+}
+
+func LogIt(level string, msg string, err error, info bool, debug bool) {
+	log.SetOutput(os.Stdout)
+	switch level {
+	case ERROR:
+		log.Printf("ERROR: %v - %v", msg, err)
+	case WARN:
+		log.Printf(" WARN: %v", msg)
+	case INFO:
+		if info {
+			log.Printf(" INFO: %v", msg)
+		}
+	case DEBUG:
+		if debug {
+			function := printPreviousFunctionName()
+			if msg != "" {
+				log.Printf("DEBUG: %v - %v", function, msg)
+			} else {
+				log.Printf("DEBUG: %v", function)
+			}
+		}
+	}
 }
 
 // func contains(slice []string, str string) bool {
