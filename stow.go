@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -18,6 +19,13 @@ const DEBUG = "debug"
 const INFO = "info"
 const WARN = "warn"
 const ERROR = "error"
+
+// Get function name for debugging
+func printPreviousFunctionName() string {
+	pc, _, _, _ := runtime.Caller(2) // 2 steps up the call stack
+	functionPath := runtime.FuncForPC(pc).Name()
+	return functionPath
+}
 
 func LogIt(level string, msg string, err error, info bool, debug bool) {
 	log.SetOutput(os.Stdout)
@@ -32,7 +40,12 @@ func LogIt(level string, msg string, err error, info bool, debug bool) {
 		}
 	case DEBUG:
 		if debug {
-			log.Printf("DEBUG: %v", msg)
+			function := printPreviousFunctionName()
+			if msg != "" {
+				log.Printf("DEBUG: %v - %v", function, msg)
+			} else {
+				log.Printf("DEBUG: %v", function)
+			}
 		}
 	}
 }
@@ -90,6 +103,7 @@ type Config struct {
 }
 
 func (c *Config) getSigmaRules(path string, f os.FileInfo, err error) error {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	if !f.IsDir() && strings.HasSuffix(path, ".yml") {
 		ReadYamlFile(path, c)
 	}
@@ -97,6 +111,7 @@ func (c *Config) getSigmaRules(path string, f os.FileInfo, err error) error {
 }
 
 func initPreviousUsed(c *Config) {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	for _, ids := range c.Ids.SigmaToWazuh {
 		c.Ids.PreviousUsed = append(c.Ids.PreviousUsed, ids...)
 	}
@@ -135,6 +150,7 @@ func InitConfig() *Config {
 		data = nil
 	}
 	initPreviousUsed(c)
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 
 	return c
 }
@@ -199,6 +215,7 @@ type WazuhRule struct {
 }
 
 func AddToMapStrToInts(c *Config, sigmaId string, wazuhId int) {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	// If the key doesn't exist, add it to the map with a new slice
 	if _, ok := c.Ids.SigmaToWazuh[sigmaId]; !ok {
 		c.Ids.SigmaToWazuh[sigmaId] = []int{wazuhId}
@@ -209,6 +226,7 @@ func AddToMapStrToInts(c *Config, sigmaId string, wazuhId int) {
 }
 
 func TrackIdMaps(sigmaId string, c *Config) string {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	// has this Sigma rule been converted previously, reuse its Wazuh rule IDs
 	if ids, ok := c.Ids.SigmaToWazuh[sigmaId]; ok {
 		for _, id := range ids {
@@ -229,6 +247,7 @@ func TrackIdMaps(sigmaId string, c *Config) string {
 }
 
 func GetLevel(sigmaLevel string, c *Config) int {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	switch strings.ToLower(sigmaLevel) {
 	case "informational":
 		return c.Wazuh.Levels.Informational
@@ -246,6 +265,7 @@ func GetLevel(sigmaLevel string, c *Config) int {
 }
 
 func GetIfGrpSid(sigma *SigmaRule, c *Config) (string, string) {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	// Get Wazuh if_group or if_sids dependencies for converted rules
 	switch {
 	case c.Wazuh.SidGrpMaps.SigmaIdToWazuhGroup[sigma.ID] != "":
@@ -265,7 +285,8 @@ func GetIfGrpSid(sigma *SigmaRule, c *Config) (string, string) {
 	}
 }
 
-func GetGroups(sigma *SigmaRule) string {
+func GetGroups(sigma *SigmaRule, c *Config) string {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	var groups string
 	if sigma.LogSource.Category != "" {
 		groups = sigma.LogSource.Category + ","
@@ -280,6 +301,7 @@ func GetGroups(sigma *SigmaRule) string {
 }
 
 func GetOptions(sigma *SigmaRule, c *Config) []string {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	var options []string
 	if c.Wazuh.Options.NoFullLog {
 		options = append(options, "no_full_log")
@@ -294,6 +316,7 @@ func GetOptions(sigma *SigmaRule, c *Config) []string {
 }
 
 func BuildRule(sigma *SigmaRule, url string, c *Config) WazuhRule {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	var rule WazuhRule
 
 	rule.ID = TrackIdMaps(sigma.ID, c)
@@ -310,7 +333,7 @@ func BuildRule(sigma *SigmaRule, url string, c *Config) WazuhRule {
 	rule.SigmaID = xml.Comment("   Sigma ID: " + strings.Replace(sigma.ID, "--", "-", -1))
 	rule.Mitre.IDs = sigma.Tags
 	rule.Options = GetOptions(sigma, c)
-	rule.Groups = GetGroups(sigma)
+	rule.Groups = GetGroups(sigma, c)
 	ifType, value := GetIfGrpSid(sigma, c)
 	if ifType == "grp" {
 		rule.IfGroup = value
@@ -322,6 +345,7 @@ func BuildRule(sigma *SigmaRule, url string, c *Config) WazuhRule {
 }
 
 func SkipSigmaRule(sigma *SigmaRule, c *Config) bool {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	switch {
 	case slices.Contains(c.Sigma.SkipIds, strings.ToLower(sigma.ID)):
 		LogIt(INFO, "Skip Sigma rule ID: "+sigma.ID, nil, c.Info, c.Debug)
@@ -344,6 +368,7 @@ func SkipSigmaRule(sigma *SigmaRule, c *Config) bool {
 }
 
 func ReadYamlFile(path string, c *Config) {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		LogIt(ERROR, "", err, c.Info, c.Debug)
@@ -374,6 +399,7 @@ func ReadYamlFile(path string, c *Config) {
 }
 
 func WriteWazuhXmlRules(c *Config) {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	// Create an XML encoder that writes to the file
 	enc := xml.NewEncoder(&c.Wazuh.WriteRules)
 	enc.Indent("", "  ")
@@ -390,6 +416,7 @@ func WriteWazuhXmlRules(c *Config) {
 func main() {
 	c := InitConfig()
 	c.Info, c.Debug = getArgs(os.Args, c)
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 
 	// Convert rules
 	file, err := os.Create(c.Wazuh.RulesFile)
@@ -423,6 +450,7 @@ func main() {
 }
 
 func getArgs(args []string, c *Config) (bool, bool) {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	if len(args) == 1 {
 		return c.Info, c.Debug
 	}
