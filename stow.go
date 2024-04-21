@@ -389,7 +389,7 @@ func propagateNots(tokens []string) []string {
 	level := 0
 	for _, t := range tokens {
 		if t == "not" {
-			notFound = true
+			notFound = !notFound
 			continue
 		} else if t == "(" {
 			level++
