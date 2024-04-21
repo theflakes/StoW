@@ -361,6 +361,54 @@ func PrintValues(detections map[string]interface{}) {
 	}
 }
 
+// Create tokens out of Sigma condition for better logic parsing
+func fixupCondition(condition interface{}) []string {
+	c := condition.(string)
+	c = strings.Replace(c, "1 of them", "1_of", -1)
+	c = strings.Replace(c, "all of them", "all_of", -1)
+	c = strings.Replace(c, "1 of", "1_of", -1)
+	c = strings.Replace(c, "all of", "all_of", -1)
+	c = strings.Replace(c, "(", " ( ", -1)
+	c = strings.Replace(c, ")", " ) ", -1)
+	t := strings.Split(c, " ")
+	// remove empty array members
+	var result []string
+	for _, str := range t {
+		if str != "" {
+			result = append(result, str)
+		}
+	}
+	return result
+}
+
+// Propagate nots found before a left paren
+// revisit logic
+func propagateNots(tokens []string) []string {
+	newTokens := []string{}
+	notFound := false
+	level := 0
+	for _, t := range tokens {
+		if t == "not" {
+			notFound = true
+			continue
+		} else if t == "(" {
+			level++
+		} else if t == ")" {
+			level--
+			if level == 0 {
+				notFound = false
+			}
+		} else if (notFound && level > 0) && (t != "or" && t != "and") {
+			t = "not " + t
+		} else if notFound && level < 1 {
+			newTokens =  append(newTokens, "not")
+			notFound = false
+		}
+		newTokens = append(newTokens, t)
+	}
+	return newTokens
+}
+
 func ReadYamlFile(path string, c *Config) {
 	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	data, err := ioutil.ReadFile(path)
@@ -390,6 +438,10 @@ func ReadYamlFile(path string, c *Config) {
 
 	detections := GetTopLevelLogicCondition(sigmaRule)
 	PrintValues(detections)
+	detection := fixupCondition(detections["condition"])
+	fmt.Printf("%v", detection)
+	detection = propagateNots(detection)
+	fmt.Printf("\n%v\n%v\n\n", detections["condition"], detection)
 
 	rule := BuildRule(&sigmaRule, url, c)
 	c.Wazuh.XmlRules.Rules = append(c.Wazuh.XmlRules.Rules, rule)

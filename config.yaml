@@ -18,7 +18,7 @@ Sigma:
   # Ignore all "convert only's" and convert all rules (yes|no), overides all other convert_only's
   # skip* will still be skipped
   # rule status will also be considered when converting all
-  ConvertAll: false
+  ConvertAll: true
   # Convert only these Sigma categories (list)
   ConvertCategories:
   # Convert only these Sigma services (list)
