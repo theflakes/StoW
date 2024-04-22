@@ -183,6 +183,18 @@ type WazuhRule struct {
 	Fields      []Field  `xml:"field"`
 }
 
+type Stack []int
+
+func (s *Stack) Push(v int) {
+	*s = append(*s, v)
+}
+
+func (s *Stack) Pop() int {
+	res := (*s)[len(*s)-1]
+	*s = (*s)[:len(*s)-1]
+	return res
+}
+
 func AddToMapStrToInts(c *Config, sigmaId string, wazuhId int) {
 	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	// If the key doesn't exist, add it to the map with a new slice
@@ -344,7 +356,8 @@ func SkipSigmaRule(sigma *SigmaRule, c *Config) bool {
 	}
 }
 
-func GetTopLevelLogicCondition(sigma SigmaRule) map[string]interface{} {
+func GetTopLevelLogicCondition(sigma SigmaRule, c *Config) map[string]interface{} {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	detections := make(map[string]interface{})
 	v := reflect.ValueOf(sigma.Detection)
 	for _, k := range v.MapKeys() {
@@ -362,15 +375,16 @@ func PrintValues(detections map[string]interface{}) {
 }
 
 // Create tokens out of Sigma condition for better logic parsing
-func fixupCondition(condition interface{}) []string {
-	c := condition.(string)
-	c = strings.Replace(c, "1 of them", "1_of", -1)
-	c = strings.Replace(c, "all of them", "all_of", -1)
-	c = strings.Replace(c, "1 of", "1_of", -1)
-	c = strings.Replace(c, "all of", "all_of", -1)
-	c = strings.Replace(c, "(", " ( ", -1)
-	c = strings.Replace(c, ")", " ) ", -1)
-	t := strings.Split(c, " ")
+func fixupCondition(condition interface{}, c *Config) []string {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
+	con := condition.(string)
+	con = strings.Replace(con, "1 of them", "1_of", -1)
+	con = strings.Replace(con, "all of them", "all_of", -1)
+	con = strings.Replace(con, "1 of", "1_of", -1)
+	con = strings.Replace(con, "all of", "all_of", -1)
+	con = strings.Replace(con, "(", " ( ", -1)
+	con = strings.Replace(con, ")", " ) ", -1)
+	t := strings.Split(con, " ")
 	// remove empty array members
 	var result []string
 	for _, str := range t {
@@ -381,9 +395,10 @@ func fixupCondition(condition interface{}) []string {
 	return result
 }
 
-// Propagate nots found before a left paren
+// Propagate nots found before a left paren to make logic parsing easier
 // revisit logic
-func propagateNots(tokens []string) []string {
+func propagateNots(tokens []string, c *Config) []string {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	newTokens := []string{}
 	notFound := false
 	level := 0
@@ -401,12 +416,73 @@ func propagateNots(tokens []string) []string {
 		} else if (notFound && level > 0) && (t != "or" && t != "and") {
 			t = "not " + t
 		} else if notFound && level < 1 {
-			newTokens =  append(newTokens, "not")
+			newTokens = append(newTokens, "not")
 			notFound = false
 		}
 		newTokens = append(newTokens, t)
 	}
 	return newTokens
+}
+
+// this is a mess I still cannot figure out
+func createPassingSets(tokens []string, c *Config) [][]string {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
+	var set []string
+	setsLevel := make(map[int][][]string)
+	var passingSets [][]string
+	var andLevels Stack
+	var lastToken string
+	isOr := false
+	level := 0
+	for _, t := range tokens {
+		if t == "(" {
+			level++
+			continue
+		} else if t == ")" {
+			level--
+			continue
+		} else if t == "and" {
+			andLevels.Push(level)
+			lastToken = ""
+			isOr = false
+			continue
+		} else if t == "or" {
+			isOr = true
+			setsLevel[level] = append(setsLevel[level], set)
+			set = nil
+			continue
+		} else if isOr {
+			for key := range setsLevel {
+				if key < level {
+					for i := range setsLevel[key] {
+						// Copy the slice to a new slice
+						l := len(setsLevel[key][i])
+						newSlice := make([]string, l)
+						copy(newSlice, setsLevel[key][i])
+
+						if l > 1 && newSlice[l-1] == lastToken {
+							if l > 1 && newSlice[l-2] == "not" {
+								newSlice = newSlice[:l-2]
+							} else {
+								newSlice = newSlice[:l-1]
+							}
+							
+						} 
+						newSlice = append(newSlice, t)
+						setsLevel[key][i] = newSlice
+					}
+				}
+			}
+			//lastToken = t
+			continue
+		}
+		set = append(set, t)
+	}
+	setsLevel[level] = append(setsLevel[level], set)
+	for _, s := range setsLevel {
+		passingSets = append(passingSets, s...)
+	}
+	return passingSets
 }
 
 func ReadYamlFile(path string, c *Config) {
@@ -436,12 +512,14 @@ func ReadYamlFile(path string, c *Config) {
 		return
 	}
 
-	detections := GetTopLevelLogicCondition(sigmaRule)
+	detections := GetTopLevelLogicCondition(sigmaRule, c)
 	PrintValues(detections)
-	detection := fixupCondition(detections["condition"])
+	detection := fixupCondition(detections["condition"], c)
 	fmt.Printf("%v", detection)
-	detection = propagateNots(detection)
+	detection = propagateNots(detection, c)
 	fmt.Printf("\n%v\n%v\n\n", detections["condition"], detection)
+	passingSets := createPassingSets(detection, c)
+	fmt.Printf("Passing sets:\n%v\n\n\n", passingSets)
 
 	rule := BuildRule(&sigmaRule, url, c)
 	c.Wazuh.XmlRules.Rules = append(c.Wazuh.XmlRules.Rules, rule)
