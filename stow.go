@@ -1,10 +1,10 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -96,7 +96,7 @@ func InitConfig() *Config {
 	}
 
 	// Load Sigma and Wazuh config for rule processing
-	data, err := ioutil.ReadFile("./config.yaml")
+	data, err := os.ReadFile("./config.yaml")
 	if err != nil {
 		LogIt(ERROR, "", err, c.Info, c.Debug)
 	}
@@ -106,7 +106,7 @@ func InitConfig() *Config {
 	}
 
 	// Load Sigma ID to Wazuh ID mappings
-	data, err = ioutil.ReadFile(c.Wazuh.RuleIdFile)
+	data, err = os.ReadFile(c.Wazuh.RuleIdFile)
 	if err != nil {
 		LogIt(ERROR, "", err, c.Info, c.Debug)
 		data = nil
@@ -193,6 +193,43 @@ func (s *Stack) Pop() int {
 	res := (*s)[len(*s)-1]
 	*s = (*s)[:len(*s)-1]
 	return res
+}
+
+func HandleB64OffsetsList(value []string) string {
+	offset1 := strings.Join(EncodeList(value, ""), "|")
+	offset2 := strings.Join(EncodeList(value, " "), "|")[2:]
+	offset3 := strings.Join(EncodeList(value, "  "), "|")[3:]
+	return offset1 + "|" + offset2 + "|" + offset3
+}
+
+func EncodeList(value []string, prefix string) []string {
+	encoded := make([]string, len(value))
+	for i, v := range value {
+		encoded[i] = base64.StdEncoding.EncodeToString([]byte(prefix + v))
+	}
+	return encoded
+}
+
+func HandleB64Offsets(value string) string {
+	offset1 := base64.StdEncoding.EncodeToString([]byte(value))
+	offset2 := base64.StdEncoding.EncodeToString([]byte(" " + value))[2:]
+	offset3 := base64.StdEncoding.EncodeToString([]byte("  " + value))[3:]
+	return offset1 + "|" + offset2 + "|" + offset3
+}
+
+func HandleWindash(value interface{}) interface{} {
+	switch v := value.(type) {
+	case []string:
+		temp := make([]string, len(v))
+		for i, val := range v {
+			temp[i] = strings.ReplaceAll(val, "-", "[/-]")
+		}
+		return temp
+	case string:
+		return strings.ReplaceAll(v, "-", "[/-]")
+	default:
+		return value
+	}
 }
 
 func AddToMapStrToInts(c *Config, sigmaId string, wazuhId int) {
@@ -374,120 +411,109 @@ func PrintValues(detections map[string]interface{}) {
 	}
 }
 
-// Create tokens out of Sigma condition for better logic parsing
-func fixupCondition(condition interface{}, c *Config) []string {
-	LogIt(DEBUG, "", nil, c.Info, c.Debug)
-	con := condition.(string)
-	con = strings.Replace(con, "1 of them", "1_of", -1)
-	con = strings.Replace(con, "all of them", "all_of", -1)
-	con = strings.Replace(con, "1 of", "1_of", -1)
-	con = strings.Replace(con, "all of", "all_of", -1)
-	con = strings.Replace(con, "(", " ( ", -1)
-	con = strings.Replace(con, ")", " ) ", -1)
-	t := strings.Split(con, " ")
-	// remove empty array members
-	var result []string
-	for _, str := range t {
-		if str != "" {
-			result = append(result, str)
-		}
-	}
-	return result
+type Token struct {
+	Type  string
+	Value string
 }
 
-// Propagate nots found before a left paren to make logic parsing easier
-// revisit logic
-func propagateNots(tokens []string, c *Config) []string {
-	LogIt(DEBUG, "", nil, c.Info, c.Debug)
-	newTokens := []string{}
-	notFound := false
-	level := 0
-	for _, t := range tokens {
-		if t == "not" {
-			notFound = !notFound
-			continue
-		} else if t == "(" {
-			level++
-		} else if t == ")" {
-			level--
-			if level == 0 {
-				notFound = false
-			}
-		} else if (notFound && level > 0) && (t != "or" && t != "and") {
-			t = "not " + t
-		} else if notFound && level < 1 {
-			newTokens = append(newTokens, "not")
-			notFound = false
+func tokenize(expr string) []Token {
+	tokens := []Token{}
+	words := strings.Fields(expr)
+	for i := 0; i < len(words); i++ {
+		word := strings.ToLower(words[i])
+		switch word {
+		case "(":
+			tokens = append(tokens, Token{"LPAREN", "("})
+		case ")":
+			tokens = append(tokens, Token{"RPAREN", ")"})
+		case "and":
+			tokens = append(tokens, Token{"AND", "and"})
+		case "or":
+			tokens = append(tokens, Token{"OR", "or"})
+		case "not":
+			tokens = append(tokens, Token{"NOT", "not"})
+		default:
+			tokens = append(tokens, Token{"LITERAL", words[i]})
 		}
-		newTokens = append(newTokens, t)
 	}
-	return newTokens
+	return tokens
 }
 
-// this is a mess I still cannot figure out
-func createPassingSets(tokens []string, c *Config) [][]string {
-	LogIt(DEBUG, "", nil, c.Info, c.Debug)
-	var set []string
-	setsLevel := make(map[int][][]string)
-	var passingSets [][]string
-	var andLevels Stack
-	var lastToken string
-	isOr := false
-	level := 0
-	for _, t := range tokens {
-		if t == "(" {
-			level++
-			continue
-		} else if t == ")" {
-			level--
-			continue
-		} else if t == "and" {
-			andLevels.Push(level)
-			lastToken = ""
-			isOr = false
-			continue
-		} else if t == "or" {
-			isOr = true
-			setsLevel[level] = append(setsLevel[level], set)
-			set = nil
-			continue
-		} else if isOr {
-			for key := range setsLevel {
-				if key < level {
-					for i := range setsLevel[key] {
-						// Copy the slice to a new slice
-						l := len(setsLevel[key][i])
-						newSlice := make([]string, l)
-						copy(newSlice, setsLevel[key][i])
+func parse(tokens []Token) [][]string {
+	if len(tokens) == 0 {
+		return [][]string{{""}}
+	}
 
-						if l > 1 && newSlice[l-1] == lastToken {
-							if l > 1 && newSlice[l-2] == "not" {
-								newSlice = newSlice[:l-2]
-							} else {
-								newSlice = newSlice[:l-1]
-							}
-							
-						} 
-						newSlice = append(newSlice, t)
-						setsLevel[key][i] = newSlice
+	var parseExpr func([]Token, bool) [][]string
+	parseExpr = func(tokens []Token, negate bool) [][]string {
+		result := [][]string{}
+		currentSet := []string{}
+		for i := 0; i < len(tokens); i++ {
+			token := tokens[i]
+			switch token.Type {
+			case "LITERAL":
+				if i > 0 && (tokens[i-1].Value == "1_of" || tokens[i-1].Value == "all_of") {
+					currentSet = append(currentSet, token.Value)
+				} else {
+					if negate {
+						currentSet = append(currentSet, "not "+token.Value)
+					} else {
+						currentSet = append(currentSet, token.Value)
 					}
 				}
+			case "NOT":
+				negate = !negate
+			case "AND":
+				currentSet = append(currentSet, token.Value)
+			case "OR":
+				result = append(result, currentSet)
+				currentSet = []string{}
+			case "LPAREN":
+				depth := 1
+				end := i + 1
+				for depth > 0 && end < len(tokens) {
+					if tokens[end].Type == "LPAREN" {
+						depth++
+					} else if tokens[end].Type == "RPAREN" {
+						depth--
+					}
+					end++
+				}
+				subexpr := parseExpr(tokens[i+1:end-1], negate)
+				for _, s := range subexpr {
+					currentSet = append(currentSet, s...)
+				}
+				i = end - 1
 			}
-			//lastToken = t
-			continue
 		}
-		set = append(set, t)
+		result = append(result, currentSet)
+		return result
 	}
-	setsLevel[level] = append(setsLevel[level], set)
-	for _, s := range setsLevel {
-		passingSets = append(passingSets, s...)
-	}
-	return passingSets
+
+	parsed := parseExpr(tokens, false)
+	return parsed
+}
+
+// Create tokens out of Sigma condition for better logic parsing
+func fixupCondition(condition string) string {
+	condition = strings.Replace(condition, "1 of them", "1_of", -1)
+	condition = strings.Replace(condition, "all of them", "all_of", -1)
+	condition = strings.Replace(condition, "1 of", "1_of", -1)
+	condition = strings.Replace(condition, "all of", "all_of", -1)
+	condition = strings.Replace(condition, "(", " ( ", -1)
+	condition = strings.Replace(condition, ")", " ) ", -1)
+	return condition
+}
+
+func convertToDNF(expr string) [][]string {
+	detection := fixupCondition(expr)
+	tokens := tokenize(detection)
+	return parse(tokens)
 }
 
 func ReadYamlFile(path string, c *Config) {
 	LogIt(DEBUG, "", nil, c.Info, c.Debug)
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		LogIt(ERROR, "", err, c.Info, c.Debug)
 		return
@@ -514,12 +540,8 @@ func ReadYamlFile(path string, c *Config) {
 
 	detections := GetTopLevelLogicCondition(sigmaRule, c)
 	PrintValues(detections)
-	detection := fixupCondition(detections["condition"], c)
-	fmt.Printf("%v", detection)
-	detection = propagateNots(detection, c)
-	fmt.Printf("\n%v\n%v\n\n", detections["condition"], detection)
-	passingSets := createPassingSets(detection, c)
-	fmt.Printf("Passing sets:\n%v\n\n\n", passingSets)
+	passingSets := convertToDNF(detections["condition"].(string))
+	fmt.Printf("Passing sets:\n%v\n\n", passingSets)
 
 	rule := BuildRule(&sigmaRule, url, c)
 	c.Wazuh.XmlRules.Rules = append(c.Wazuh.XmlRules.Rules, rule)
@@ -570,7 +592,7 @@ func main() {
 		LogIt(ERROR, "", err, c.Info, c.Debug)
 	}
 	// Write JSON data to a file
-	err = ioutil.WriteFile(c.Wazuh.RuleIdFile, jsonData, 0644)
+	err = os.WriteFile(c.Wazuh.RuleIdFile, jsonData, 0644)
 	if err != nil {
 		LogIt(ERROR, "", err, c.Info, c.Debug)
 	}
