@@ -384,17 +384,19 @@ func processDetectionField(selectionKey string, key string, value interface{}, s
 	var values []string
 	isRegex := false
 	isB64 := false
-	exactMatch := false
+	startsWith := false
+	endsWith := false
+	contains := false
 
 	if len(parts) > 1 {
 		for _, modifier := range parts[1:] {
 			switch strings.ToLower(modifier) {
 			case "contains":
-				// Default behavior, no special handling needed
+				contains = true
 			case "startswith":
-				exactMatch = true
+				startsWith = true
 			case "endswith":
-				exactMatch = true
+				endsWith = true
 			case "all":
 				// Will be handled later
 			case "re":
@@ -407,6 +409,12 @@ func processDetectionField(selectionKey string, key string, value interface{}, s
 				value = HandleWindash(value)
 			}
 		}
+	}
+
+	// If no match type modifier is specified, default to exact match.
+	if !contains && !startsWith && !endsWith && !isRegex {
+		startsWith = true
+		endsWith = true
 	}
 
 	switch v := value.(type) {
@@ -439,8 +447,16 @@ func processDetectionField(selectionKey string, key string, value interface{}, s
 				newField.Value = HandleB64Offsets(v)
 			} else if isRegex {
 				newField.Value = v
-			} else if exactMatch {
-				newField.Value = "^" + regexp.QuoteMeta(v) + "$"
+			} else if startsWith || endsWith {
+				prefix := ""
+				suffix := ""
+				if startsWith {
+					prefix = "^"
+				}
+				if endsWith {
+					suffix = "$"
+				}
+				newField.Value = "(?i)" + prefix + regexp.QuoteMeta(v) + suffix
 			} else {
 				newField.Value = "(?i)" + regexp.QuoteMeta(v)
 			}
@@ -454,8 +470,6 @@ func processDetectionField(selectionKey string, key string, value interface{}, s
 			fieldValues = append(fieldValues, HandleB64Offsets(v))
 		} else if isRegex {
 			fieldValues = append(fieldValues, v)
-		} else if exactMatch {
-			fieldValues = append(fieldValues, "^"+regexp.QuoteMeta(v)+"$")
 		} else {
 			fieldValues = append(fieldValues, regexp.QuoteMeta(v))
 		}
@@ -469,7 +483,17 @@ func processDetectionField(selectionKey string, key string, value interface{}, s
 		if isRegex {
 			field.Value = strings.Join(fieldValues, "|")
 		} else {
-			field.Value = "(?i)" + strings.Join(fieldValues, "|")
+			value := strings.Join(fieldValues, "|")
+			if len(fieldValues) > 1 {
+				value = "(?:" + value + ")"
+			}
+			if startsWith {
+				value = "^" + value
+			}
+			if endsWith {
+				value = value + "$"
+			}
+			field.Value = "(?i)" + value
 		}
 		*fields = append(*fields, field) // Append to the passed slice pointer
 	}
