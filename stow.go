@@ -386,13 +386,12 @@ func processDetectionField(selectionKey string, key string, value interface{}, s
 	isB64 := false
 	startsWith := false
 	endsWith := false
-	contains := false
 
 	if len(parts) > 1 {
 		for _, modifier := range parts[1:] {
 			switch strings.ToLower(modifier) {
 			case "contains":
-				contains = true
+				// Default behavior, no special handling needed
 			case "startswith":
 				startsWith = true
 			case "endswith":
@@ -409,12 +408,6 @@ func processDetectionField(selectionKey string, key string, value interface{}, s
 				value = HandleWindash(value)
 			}
 		}
-	}
-
-	// If no match type modifier is specified, default to exact match.
-	if !contains && !startsWith && !endsWith && !isRegex {
-		startsWith = true
-		endsWith = true
 	}
 
 	switch v := value.(type) {
@@ -514,6 +507,8 @@ func GetFields(detection map[string]interface{}, sigma *SigmaRule, c *Config, se
 					}
 				}
 			}
+		} else if value, ok := selectionVal.(string); ok {
+			processDetectionField(selectionKey, "", value, sigma, c, &fields, selectionNegations)
 		}
 	}
 	return fields
