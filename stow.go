@@ -359,7 +359,7 @@ func GetOptions(sigma *SigmaRule, c *Config) []string {
 }
 
 // processDetectionField extracts and processes a single field from a Sigma detection.
-func processDetectionField(key string, value interface{}, sigma *SigmaRule, c *Config, fields *[]Field) {
+func processDetectionField(selectionKey string, key string, value interface{}, sigma *SigmaRule, c *Config, fields *[]Field, selectionNegations map[string]bool) {
 	// Handle modifiers in the key
 	parts := strings.Split(key, "|")
 	fieldName := parts[0]
@@ -374,6 +374,11 @@ func processDetectionField(key string, value interface{}, sigma *SigmaRule, c *C
 	field := Field{
 		Name: wazuhField,
 		Type: "pcre2",
+	}
+
+	// Apply negation if this selectionKey is marked as negated
+	if selectionNegations[selectionKey] {
+		field.Negate = "yes"
 	}
 
 	var values []string
@@ -450,7 +455,7 @@ func processDetectionField(key string, value interface{}, sigma *SigmaRule, c *C
 		} else if isRegex {
 			fieldValues = append(fieldValues, v)
 		} else if exactMatch {
-			fieldValues = append(fieldValues, "^" + regexp.QuoteMeta(v) + "$")
+			fieldValues = append(fieldValues, "^"+regexp.QuoteMeta(v)+"$")
 		} else {
 			fieldValues = append(fieldValues, regexp.QuoteMeta(v))
 		}
@@ -470,18 +475,18 @@ func processDetectionField(key string, value interface{}, sigma *SigmaRule, c *C
 	}
 }
 
-func GetFields(detection map[string]interface{}, sigma *SigmaRule, c *Config) []Field {
+func GetFields(detection map[string]interface{}, sigma *SigmaRule, c *Config, selectionNegations map[string]bool) []Field {
 	var fields []Field
-	for _, selectionVal := range detection {
+	for selectionKey, selectionVal := range detection {
 		if selectionMap, ok := selectionVal.(map[string]interface{}); ok {
 			for key, value := range selectionMap {
-				processDetectionField(key, value, sigma, c, &fields)
+				processDetectionField(selectionKey, key, value, sigma, c, &fields, selectionNegations)
 			}
 		} else if selectionList, ok := selectionVal.([]interface{}); ok {
 			for _, item := range selectionList {
 				if itemMap, ok := item.(map[string]interface{}); ok {
 					for key, value := range itemMap {
-						processDetectionField(key, value, sigma, c, &fields)
+						processDetectionField(selectionKey, key, value, sigma, c, &fields, selectionNegations)
 					}
 				}
 			}
@@ -490,11 +495,11 @@ func GetFields(detection map[string]interface{}, sigma *SigmaRule, c *Config) []
 	return fields
 }
 
-func BuildRule(sigma *SigmaRule, url string, c *Config, detections map[string]interface{}, negate bool) WazuhRule {
+func BuildRule(sigma *SigmaRule, url string, c *Config, detections map[string]interface{}, selectionNegations map[string]bool) WazuhRule {
 	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	var rule WazuhRule
 
-	fields := GetFields(detections, sigma, c)
+	fields := GetFields(detections, sigma, c, selectionNegations)
 	if len(fields) == 0 {
 		LogIt(WARN, "No fields found for rule: "+sigma.ID+" URL: "+url, nil, c.Info, c.Debug)
 		return WazuhRule{}
@@ -521,11 +526,7 @@ func BuildRule(sigma *SigmaRule, url string, c *Config, detections map[string]in
 	} else {
 		rule.IfSid = value
 	}
-	for i := range fields {
-		if negate {
-			fields[i].Negate = "yes"
-		}
-	}
+
 	rule.Fields = fields
 
 	return rule
@@ -739,16 +740,18 @@ func ReadYamlFile(path string, c *Config) {
 	for _, set := range passingSets { // Each 'set' is an AND group of selection names
 		// We need to build a base detection map for this 'set'
 		baseDetection := make(map[string]interface{})
-		negate := false
+		selectionNegations := make(map[string]bool) // New map to store negation status per selection
 		hasListSelection := false
 		var listSelectionKey string
 		var listSelectionValue []interface{}
 
 		for _, item := range set {
+			currentNegate := false // Negation for this specific item
 			if strings.HasPrefix(item, "not ") {
 				item = strings.TrimPrefix(item, "not ")
-				negate = true
+				currentNegate = true
 			}
+			selectionNegations[item] = currentNegate // Store negation status for this item
 
 			// For now, let's assume 'item' is a direct selection name.
 			// Wildcards would complicate the 'listSelection' logic.
@@ -780,14 +783,14 @@ func ReadYamlFile(path string, c *Config) {
 				// Add the current item from the list selection
 				currentDetection[listSelectionKey] = listItem
 
-				rule := BuildRule(&sigmaRule, url, c, currentDetection, negate)
+				rule := BuildRule(&sigmaRule, url, c, currentDetection, selectionNegations)
 				if rule.ID != "" {
 					c.Wazuh.XmlRules.Rules = append(c.Wazuh.XmlRules.Rules, rule)
 				}
 			}
 		} else {
 			// No list selections, build one rule from the base detection
-			rule := BuildRule(&sigmaRule, url, c, baseDetection, negate)
+			rule := BuildRule(&sigmaRule, url, c, baseDetection, selectionNegations)
 			if rule.ID != "" {
 				c.Wazuh.XmlRules.Rules = append(c.Wazuh.XmlRules.Rules, rule)
 			}
