@@ -768,6 +768,22 @@ func ReadYamlFile(path string, c *Config) {
 		return
 	}
 
+	detectionBytes, _ := yaml.Marshal(sigmaRule.Detection)
+	detectionString := string(detectionBytes)
+
+	if strings.Contains(detectionString, "timeframe:") {
+		LogIt(INFO, "Skip Sigma rule timeframe: "+sigmaRule.ID, nil, c.Info, c.Debug)
+		c.TrackSkips.TimeframeSkips++
+		c.TrackSkips.RulesSkipped++
+		return
+	}
+	if strings.Contains(detectionString, "|cidr:") {
+		LogIt(INFO, "Skip Sigma rule cidr: "+sigmaRule.ID, nil, c.Info, c.Debug)
+		c.TrackSkips.Cidr++
+		c.TrackSkips.RulesSkipped++
+		return
+	}
+
 	detections := GetTopLevelLogicCondition(sigmaRule, c)
 	condition, ok := detections["condition"].(string)
 	if !ok {
