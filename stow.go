@@ -73,7 +73,6 @@ type Config struct {
 		Cidr              int
 		ParenSkips        int
 		TimeframeSkips    int
-		OneOfAndSkips     int
 		ExperimentalSkips int
 		HardSkipped       int
 		RulesSkipped      int
@@ -618,6 +617,10 @@ func tokenize(expr string) []Token {
 			tokens = append(tokens, Token{"OR", "or"})
 		case "not":
 			tokens = append(tokens, Token{"NOT", "not"})
+		case "1_of":
+			tokens = append(tokens, Token{"ONEOF", "1_of"})
+		case "all_of":
+			tokens = append(tokens, Token{"ALLOF", "all_of"})
 		default:
 			tokens = append(tokens, Token{"LITERAL", words[i]})
 		}
@@ -752,6 +755,40 @@ func ReadYamlFile(path string, c *Config) {
 	if !ok {
 		LogIt(ERROR, "condition is not a string", nil, c.Info, c.Debug)
 		return
+	}
+
+	// Pre-process condition to expand '1_of' and 'all_of'
+	re := regexp.MustCompile(`(1_of|all_of)\s+([a-zA-Z0-9_\*]+)`)
+	matches := re.FindAllStringSubmatch(condition, -1)
+
+	for _, match := range matches {
+		directive := match[1]
+		pattern := match[2]
+
+		var matchingSelections []string
+		wildcard := strings.HasSuffix(pattern, "*")
+		prefix := strings.TrimSuffix(pattern, "*")
+
+		for d := range detections {
+			if d == "condition" {
+				continue
+			}
+			if wildcard && strings.HasPrefix(d, prefix) {
+				matchingSelections = append(matchingSelections, d)
+			} else if d == pattern {
+				matchingSelections = append(matchingSelections, d)
+			}
+		}
+
+		if len(matchingSelections) > 0 {
+			var replacement string
+			if directive == "1_of" {
+				replacement = "(" + strings.Join(matchingSelections, " or ") + ")"
+			} else { // all_of
+				replacement = "(" + strings.Join(matchingSelections, " and ") + ")"
+			}
+			condition = strings.Replace(condition, match[0], replacement, 1)
+		}
 	}
 
 	passingSets := convertToDNF(condition)
@@ -897,7 +934,7 @@ func main() {
 	fmt.Printf("\n\n***************************************************************************\n")
 	fmt.Printf(" Number of Sigma Experimental rules skipped: %d\n", c.TrackSkips.ExperimentalSkips)
 	fmt.Printf("    Number of Sigma TIMEFRAME rules skipped: %d\n", c.TrackSkips.TimeframeSkips)
-	fmt.Printf("Number of Sigma 1 OF with AND rules skipped: %d\n", c.TrackSkips.OneOfAndSkips)
+		fmt.Printf("Number of Sigma 1 OF with AND rules skipped: %d\n", c.TrackSkips.OneOfAndSkips)
 	fmt.Printf("        Number of Sigma PAREN rules skipped: %d\n", c.TrackSkips.ParenSkips)
 	fmt.Printf("         Number of Sigma CIDR rules skipped: %d\n", c.TrackSkips.Cidr)
 	fmt.Printf("         Number of Sigma NEAR rules skipped: %d\n", c.TrackSkips.NearSkips)
