@@ -736,8 +736,7 @@ func fixupCondition(condition string) string {
 }
 
 func convertToDNF(expr string) [][]string {
-	detection := fixupCondition(expr)
-	tokens := tokenize(detection)
+	tokens := tokenize(expr)
 	return parse(tokens)
 }
 
@@ -790,6 +789,7 @@ func ReadYamlFile(path string, c *Config) {
 		LogIt(ERROR, "condition is not a string", nil, c.Info, c.Debug)
 		return
 	}
+	condition = fixupCondition(condition)
 
 	// Pre-process condition to expand '1_of' and 'all_of'
 	re := regexp.MustCompile(`(1_of|all_of)\s+([a-zA-Z0-9_\*]+)`)
