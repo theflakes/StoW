@@ -557,12 +557,17 @@ func SkipSigmaRule(sigma *SigmaRule, c *Config) bool {
 		LogIt(INFO, "Skip Sigma rule ID: "+sigma.ID, nil, c.Info, c.Debug)
 		c.TrackSkips.HardSkipped++
 		c.TrackSkips.RulesSkipped++
-		return true
-	case !slices.Contains(c.Sigma.RuleStatus, strings.ToLower(sigma.Status)):
-		LogIt(INFO, "Skip Sigma rule status: "+sigma.ID, nil, c.Info, c.Debug)
-		c.TrackSkips.ExperimentalSkips++
-		c.TrackSkips.RulesSkipped++
-		return true
+		// return true
+		lowerRuleStatus := make([]string, len(c.Sigma.RuleStatus))
+		for i, s := range c.Sigma.RuleStatus {
+			lowerRuleStatus[i] = strings.ToLower(s)
+		}
+		if !slices.Contains(lowerRuleStatus, strings.ToLower(sigma.Status)) {
+			LogIt(INFO, "Skip Sigma rule status: "+sigma.ID, nil, c.Info, c.Debug)
+			c.TrackSkips.ExperimentalSkips++
+			c.TrackSkips.RulesSkipped++
+			return true
+		}
 	case c.Sigma.ConvertAll:
 		return false
 	case slices.Contains(c.Sigma.ConvertCategories, strings.ToLower(sigma.LogSource.Category)):
@@ -576,6 +581,7 @@ func SkipSigmaRule(sigma *SigmaRule, c *Config) bool {
 		c.TrackSkips.RulesSkipped++
 		return true
 	}
+	return false
 }
 
 func GetTopLevelLogicCondition(sigma SigmaRule, c *Config) map[string]interface{} {
@@ -671,6 +677,9 @@ func parse(tokens []Token) [][]string {
 		case "LITERAL":
 			evalStack = append(evalStack, [][]string{{token.Value}})
 		case "NOT":
+			if len(evalStack) < 1 {
+				return [][]string{}
+			}
 			op := evalStack[len(evalStack)-1]
 			evalStack = evalStack[:len(evalStack)-1]
 			var negated [][]string
@@ -683,6 +692,9 @@ func parse(tokens []Token) [][]string {
 			}
 			evalStack = append(evalStack, negated)
 		case "AND":
+			if len(evalStack) < 2 {
+				return [][]string{}
+			}
 			op2 := evalStack[len(evalStack)-1]
 			evalStack = evalStack[:len(evalStack)-1]
 			op1 := evalStack[len(evalStack)-1]
@@ -695,6 +707,9 @@ func parse(tokens []Token) [][]string {
 			}
 			evalStack = append(evalStack, andResult)
 		case "OR":
+			if len(evalStack) < 2 {
+				return [][]string{}
+			}
 			op2 := evalStack[len(evalStack)-1]
 			evalStack = evalStack[:len(evalStack)-1]
 			op1 := evalStack[len(evalStack)-1]
@@ -703,6 +718,9 @@ func parse(tokens []Token) [][]string {
 		}
 	}
 
+	if len(evalStack) == 0 {
+		return [][]string{}
+	}
 	return evalStack[0]
 }
 
@@ -788,12 +806,36 @@ func ReadYamlFile(path string, c *Config) {
 				replacement = "(" + strings.Join(matchingSelections, " and ") + ")"
 			}
 			condition = strings.Replace(condition, match[0], replacement, 1)
+		} else {
+			var replacement string
+			if directive == "1_of" {
+				replacement = "__FALSE__"
+			} else { // all_of
+				replacement = "__TRUE__"
+			}
+			condition = strings.Replace(condition, match[0], replacement, 1)
 		}
 	}
 
 	passingSets := convertToDNF(condition)
 
 	for _, set := range passingSets { // Each 'set' is an AND group of selection names
+		isFalse := false
+		var newSet []string
+		for _, item := range set {
+			if item == "__FALSE__" {
+				isFalse = true
+				break
+			}
+			if item != "__TRUE__" {
+				newSet = append(newSet, item)
+			}
+		}
+
+		if isFalse {
+			continue // This whole AND group is false
+		}
+
 		// We need to build a base detection map for this 'set'
 		baseDetection := make(map[string]interface{})
 		selectionNegations := make(map[string]bool) // New map to store negation status per selection
@@ -801,7 +843,7 @@ func ReadYamlFile(path string, c *Config) {
 		var listSelectionKey string
 		var listSelectionValue []interface{}
 
-		for _, item := range set {
+		for _, item := range newSet {
 			currentNegate := false // Negation for this specific item
 			if strings.HasPrefix(item, "not ") {
 				item = strings.TrimPrefix(item, "not ")
@@ -934,7 +976,7 @@ func main() {
 	fmt.Printf("\n\n***************************************************************************\n")
 	fmt.Printf(" Number of Sigma Experimental rules skipped: %d\n", c.TrackSkips.ExperimentalSkips)
 	fmt.Printf("    Number of Sigma TIMEFRAME rules skipped: %d\n", c.TrackSkips.TimeframeSkips)
-		fmt.Printf("Number of Sigma 1 OF with AND rules skipped: %d\n", c.TrackSkips.OneOfAndSkips)
+
 	fmt.Printf("        Number of Sigma PAREN rules skipped: %d\n", c.TrackSkips.ParenSkips)
 	fmt.Printf("         Number of Sigma CIDR rules skipped: %d\n", c.TrackSkips.Cidr)
 	fmt.Printf("         Number of Sigma NEAR rules skipped: %d\n", c.TrackSkips.NearSkips)
