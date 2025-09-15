@@ -5,7 +5,7 @@ Sigma:
   # root of the Sigma rules URL
   BaseUrl: https://github.com/SigmaHQ/sigma/tree/master/rules
   # Sigma rules location
-  RulesRoot: ../sigma/rules
+  RulesRoot: ./temp_rules
   # Convert only rules with status, comment out status' you don't want converted
   RuleStatus:
     - stable
@@ -18,7 +18,7 @@ Sigma:
   # Ignore all "convert only's" and convert all rules (yes|no), overides all other convert_only's
   # skip* will still be skipped
   # rule status will also be considered when converting all
-  ConvertAll: true
+  ConvertAll: false
   # Convert only these Sigma categories (list)
   ConvertCategories:
   # Convert only these Sigma services (list)
@@ -125,6 +125,7 @@ Wazuh:
       EventID: win.system.eventID
       EventType: win.eventdata.eventType
       FailureCode: win.eventdata.failureCode
+      FileName: win.eventdata.fileName
       FileVersion: win.eventdata.fileVersion
       FilterName: win.evendata.filterName
       FilterOrigin: win.eventdata.filterOrigin

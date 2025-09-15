@@ -726,8 +726,8 @@ func parse(tokens []Token) [][]string {
 
 // Create tokens out of Sigma condition for better logic parsing
 func fixupCondition(condition string) string {
-	condition = strings.Replace(condition, "1 of them", "1_of", -1)
-	condition = strings.Replace(condition, "all of them", "all_of", -1)
+	condition = strings.Replace(condition, "1 of them", "1_of them", -1)
+	condition = strings.Replace(condition, "all of them", "all_of them", -1)
 	condition = strings.Replace(condition, "1 of", "1_of", -1)
 	condition = strings.Replace(condition, "all of", "all_of", -1)
 	condition = strings.Replace(condition, "(", " ( ", -1)
@@ -792,42 +792,75 @@ func ReadYamlFile(path string, c *Config) {
 	condition = fixupCondition(condition)
 
 	// Pre-process condition to expand '1_of' and 'all_of'
-	re := regexp.MustCompile(`(1_of|all_of)\s+([a-zA-Z0-9_\*]+)`)
+	re := regexp.MustCompile(`(not\s+)?(1_of|all_of)\s+(them|[a-zA-Z0-9_\*]+)`)
 	matches := re.FindAllStringSubmatch(condition, -1)
 
 	for _, match := range matches {
-		directive := match[1]
-		pattern := match[2]
+		isNot := match[1] != ""
+		directive := match[2]
+		pattern := match[3]
 
 		var matchingSelections []string
 		wildcard := strings.HasSuffix(pattern, "*")
 		prefix := strings.TrimSuffix(pattern, "*")
 
-		for d := range detections {
-			if d == "condition" {
-				continue
+		if pattern == "them" {
+			for d := range detections {
+				if d != "condition" {
+					matchingSelections = append(matchingSelections, d)
+				}
 			}
-			if wildcard && strings.HasPrefix(d, prefix) {
-				matchingSelections = append(matchingSelections, d)
-			} else if d == pattern {
-				matchingSelections = append(matchingSelections, d)
+		} else {
+			for d := range detections {
+				if d == "condition" {
+					continue
+				}
+				if wildcard && strings.HasPrefix(d, prefix) {
+					matchingSelections = append(matchingSelections, d)
+				} else if d == pattern {
+					matchingSelections = append(matchingSelections, d)
+				}
 			}
 		}
 
 		if len(matchingSelections) > 0 {
 			var replacement string
 			if directive == "1_of" {
-				replacement = "(" + strings.Join(matchingSelections, " or ") + ")"
+				if isNot {
+					var negatedSelections []string
+					for _, s := range matchingSelections {
+						negatedSelections = append(negatedSelections, "not "+s)
+					}
+					replacement = "(" + strings.Join(negatedSelections, " and ") + ")"
+				} else {
+					replacement = "(" + strings.Join(matchingSelections, " or ") + ")"
+				}
 			} else { // all_of
-				replacement = "(" + strings.Join(matchingSelections, " and ") + ")"
+				if isNot {
+					var negatedSelections []string
+					for _, s := range matchingSelections {
+						negatedSelections = append(negatedSelections, "not "+s)
+					}
+					replacement = "(" + strings.Join(negatedSelections, " or ") + ")"
+				} else {
+					replacement = "(" + strings.Join(matchingSelections, " and ") + ")"
+				}
 			}
 			condition = strings.Replace(condition, match[0], replacement, 1)
 		} else {
 			var replacement string
 			if directive == "1_of" {
-				replacement = "__FALSE__"
+				if isNot {
+					replacement = "__TRUE__" // not (FALSE) is TRUE
+				} else {
+					replacement = "__FALSE__"
+				}
 			} else { // all_of
-				replacement = "__TRUE__"
+				if isNot {
+					replacement = "__FALSE__" // not (TRUE) is FALSE
+				} else {
+					replacement = "__TRUE__"
+				}
 			}
 			condition = strings.Replace(condition, match[0], replacement, 1)
 		}
@@ -940,6 +973,21 @@ func main() {
 	}
 	c.Wazuh.WriteRules = *file
 	defer file.Close()
+
+	// Check if Sigma rules directory is valid
+	sigmaRulesPathInfo, err := os.Stat(c.Sigma.RulesRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			LogIt(ERROR, fmt.Sprintf("Sigma rules directory '%s' not found. Please check the 'RulesRoot' path in your config.yaml.", c.Sigma.RulesRoot), err, c.Info, c.Debug)
+		} else {
+			LogIt(ERROR, fmt.Sprintf("Error accessing Sigma rules directory '%s'. Please check the 'RulesRoot' path in your config.yaml.", c.Sigma.RulesRoot), err, c.Info, c.Debug)
+		}
+		return
+	}
+	if !sigmaRulesPathInfo.IsDir() {
+		LogIt(ERROR, fmt.Sprintf("The configured Sigma rules path '%s' is not a directory. Please check the 'RulesRoot' path in your config.yaml.", c.Sigma.RulesRoot), nil, c.Info, c.Debug)
+		return
+	}
 
 	var sigmaRuleIds []string
 	err = filepath.Walk(c.Sigma.RulesRoot, func(path string, f os.FileInfo, err error) error {
