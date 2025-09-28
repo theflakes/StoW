@@ -583,36 +583,52 @@ func BuildRule(sigma *SigmaRule, url string, c *Config, detections map[string]an
 
 func SkipSigmaRule(sigma *SigmaRule, c *Config) bool {
 	LogIt(DEBUG, "", nil, c.Info, c.Debug)
-	switch {
-	case slices.Contains(c.Sigma.SkipIds, strings.ToLower(sigma.ID)):
+
+	// Check if rule is explicitly skipped
+	if slices.Contains(c.Sigma.SkipIds, strings.ToLower(sigma.ID)) {
 		LogIt(INFO, "Skip Sigma rule ID: "+sigma.ID, nil, c.Info, c.Debug)
 		c.TrackSkips.HardSkipped++
 		c.TrackSkips.RulesSkipped++
-		// return true
-		lowerRuleStatus := make([]string, len(c.Sigma.RuleStatus))
-		for i, s := range c.Sigma.RuleStatus {
-			lowerRuleStatus[i] = strings.ToLower(s)
-		}
-		if !slices.Contains(lowerRuleStatus, strings.ToLower(sigma.Status)) {
-			LogIt(INFO, "Skip Sigma rule status: "+sigma.ID, nil, c.Info, c.Debug)
-			c.TrackSkips.ExperimentalSkips++
-			c.TrackSkips.RulesSkipped++
-			return true
-		}
-	case c.Sigma.ConvertAll:
-		return false
-	case slices.Contains(c.Sigma.ConvertCategories, strings.ToLower(sigma.LogSource.Category)):
-		return false
-	case slices.Contains(c.Sigma.ConvertServices, strings.ToLower(sigma.LogSource.Service)):
-		return false
-	case slices.Contains(c.Sigma.ConvertProducts, strings.ToLower(sigma.LogSource.Product)):
-		return false
-	default:
-		LogIt(INFO, "Skip Sigma rule default: "+sigma.ID, nil, c.Info, c.Debug)
+		return true
+	}
+
+	// Check rule status
+	lowerRuleStatus := make([]string, len(c.Sigma.RuleStatus))
+	for i, s := range c.Sigma.RuleStatus {
+		lowerRuleStatus[i] = strings.ToLower(s)
+	}
+	if !slices.Contains(lowerRuleStatus, strings.ToLower(sigma.Status)) {
+		LogIt(INFO, "Skip Sigma rule status: "+sigma.ID, nil, c.Info, c.Debug)
+		c.TrackSkips.ExperimentalSkips++
 		c.TrackSkips.RulesSkipped++
 		return true
 	}
-	return false
+
+	// If ConvertAll is true, convert all rules that are not explicitly skipped
+	if c.Sigma.ConvertAll {
+		return false
+	}
+
+	// If no specific conversion criteria are set, convert all rules
+	if len(c.Sigma.ConvertCategories) == 0 && len(c.Sigma.ConvertServices) == 0 && len(c.Sigma.ConvertProducts) == 0 {
+		return false
+	}
+
+	// Check if the rule matches any of the conversion criteria
+	if slices.Contains(c.Sigma.ConvertCategories, strings.ToLower(sigma.LogSource.Category)) {
+		return false
+	}
+	if slices.Contains(c.Sigma.ConvertServices, strings.ToLower(sigma.LogSource.Service)) {
+		return false
+	}
+	if slices.Contains(c.Sigma.ConvertProducts, strings.ToLower(sigma.LogSource.Product)) {
+		return false
+	}
+
+	// If we are here, it means the rule does not match any of the conversion criteria
+	LogIt(INFO, "Skip Sigma rule default: "+sigma.ID, nil, c.Info, c.Debug)
+	c.TrackSkips.RulesSkipped++
+	return true
 }
 
 func GetTopLevelLogicCondition(sigma SigmaRule, c *Config) map[string]any {
