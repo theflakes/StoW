@@ -95,17 +95,7 @@ func initPreviousUsed(c *Config) {
 	}
 }
 
-func InitConfig() *Config {
-	c := &Config{
-		Ids: struct {
-			PreviousUsed []int            `yaml:"PreviousUsed"`
-			CurrentUsed  []int            `yaml:"CurrentUsed"`
-			SigmaToWazuh map[string][]int `yaml:"SigmaToWazuh"`
-		}{
-			SigmaToWazuh: make(map[string][]int),
-		},
-	}
-
+func LoadStowConfig(c *Config) {
 	// Load Sigma and Wazuh config for rule processing
 	data, err := os.ReadFile("./config.yaml")
 	if err != nil {
@@ -122,15 +112,17 @@ func InitConfig() *Config {
 		lowerFieldMaps[strings.ToLower(product)] = fields
 	}
 	c.Wazuh.FieldMaps = lowerFieldMaps
+}
 
+func LoadSigmaWazuhIdMap(c *Config) {
 	// Load Sigma ID to Wazuh ID mappings
-	data, err = os.ReadFile(c.Wazuh.RuleIdFile)
+	data, err := os.ReadFile(c.Wazuh.RuleIdFile)
 	if err != nil {
 		LogIt(WARN, "Could not read rule_id_file, creating a new one", err, c.Info, c.Debug)
 		file, err := os.Create(c.Wazuh.RuleIdFile)
 		if err != nil {
 			LogIt(ERROR, "", err, c.Info, c.Debug)
-			return c
+			return
 		}
 		file.Close()
 		data = nil
@@ -140,6 +132,22 @@ func InitConfig() *Config {
 		LogIt(ERROR, "", err, c.Info, c.Debug)
 		data = nil
 	}
+}
+
+func InitConfig() *Config {
+	c := &Config{
+		Ids: struct {
+			PreviousUsed []int            `yaml:"PreviousUsed"`
+			CurrentUsed  []int            `yaml:"CurrentUsed"`
+			SigmaToWazuh map[string][]int `yaml:"SigmaToWazuh"`
+		}{
+			SigmaToWazuh: make(map[string][]int),
+		},
+	}
+
+	LoadStowConfig(c)
+	LoadSigmaWazuhIdMap(c)
+
 	initPreviousUsed(c)
 	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 
@@ -161,7 +169,7 @@ type SigmaRule struct {
 		Service  string `yaml:"service"`
 		Category string `yaml:"category"`
 	} `yaml:"logsource"`
-	Detection      interface{} `yaml:"detection"`
+	Detection      any `yaml:"detection"`
 	FalsePositives []string    `yaml:"falsepositives"`
 	Level          string      `yaml:"level"`
 }
@@ -241,7 +249,7 @@ func HandleB64Offsets(value string) string {
 	return offset1 + "|" + offset2 + "|" + offset3
 }
 
-func HandleWindash(value interface{}) interface{} {
+func HandleWindash(value any) any {
 	switch v := value.(type) {
 	case []string:
 		temp := make([]string, len(v))
@@ -357,18 +365,49 @@ func GetOptions(sigma *SigmaRule, c *Config) []string {
 	return options
 }
 
+func GetWazuhField(fieldName string, sigma *SigmaRule, c *Config) string {
+	if f, ok := c.Wazuh.FieldMaps[strings.ToLower(sigma.LogSource.Product)][fieldName]; ok {
+		return f
+	} else {
+		return "full_log"
+	}
+}
+
+func GetFieldValues(value any, fieldName string, c *Config) []string {
+	var values []string
+	switch v := value.(type) {
+	case string:
+		values = append(values, v)
+	case int:
+		values = append(values, strconv.Itoa(v))
+	case []string:
+		values = append(values, v...)
+	case []any:
+		for _, i := range v {
+			switch iv := i.(type) {
+			case string:
+				values = append(values, iv)
+			case int:
+				values = append(values, strconv.Itoa(iv))
+			}
+		}
+	default:
+		LogIt(DEBUG, fmt.Sprintf("Unsupported value type for field '%s': %T", fieldName, v), nil, c.Info, c.Debug)
+	}
+
+	if len(values) == 0 {
+		LogIt(DEBUG, fmt.Sprintf("No values extracted for field '%s'", fieldName), nil, c.Info, c.Debug)
+	}
+	return values
+}
+
 // processDetectionField extracts and processes a single field from a Sigma detection.
-func processDetectionField(selectionKey string, key string, value interface{}, sigma *SigmaRule, c *Config, fields *[]Field, selectionNegations map[string]bool) {
+func processDetectionField(selectionKey string, key string, value any, sigma *SigmaRule, c *Config, fields *[]Field, selectionNegations map[string]bool) {
 	// Handle modifiers in the key
 	parts := strings.Split(key, "|")
 	fieldName := parts[0]
 
-	var wazuhField string
-	if f, ok := c.Wazuh.FieldMaps[strings.ToLower(sigma.LogSource.Product)][fieldName]; ok {
-		wazuhField = f
-	} else {
-		wazuhField = "full_log"
-	}
+	wazuhField := GetWazuhField(fieldName, sigma, c)
 
 	field := Field{
 		Name: wazuhField,
@@ -409,27 +448,7 @@ func processDetectionField(selectionKey string, key string, value interface{}, s
 		}
 	}
 
-	switch v := value.(type) {
-	case string:
-		values = append(values, v)
-	case int:
-		values = append(values, strconv.Itoa(v))
-	case []interface{}:
-		for _, i := range v {
-			switch iv := i.(type) {
-			case string:
-				values = append(values, iv)
-			case int:
-				values = append(values, strconv.Itoa(iv))
-			}
-		}
-	default:
-		LogIt(DEBUG, fmt.Sprintf("Unsupported value type for field '%s': %T", fieldName, v), nil, c.Info, c.Debug)
-	}
-
-	if len(values) == 0 {
-		LogIt(DEBUG, fmt.Sprintf("No values extracted for field '%s'", fieldName), nil, c.Info, c.Debug)
-	}
+	values = GetFieldValues(value, fieldName, c)
 
 	var fieldValues []string
 	if slices.Contains(parts, "all") {
@@ -491,16 +510,28 @@ func processDetectionField(selectionKey string, key string, value interface{}, s
 	}
 }
 
-func GetFields(detection map[string]interface{}, sigma *SigmaRule, c *Config, selectionNegations map[string]bool) []Field {
+func GetFields(detection map[string]any, sigma *SigmaRule, c *Config, selectionNegations map[string]bool) []Field {
 	var fields []Field
 	for selectionKey, selectionVal := range detection {
-		if selectionMap, ok := selectionVal.(map[string]interface{}); ok {
+		if selectionMap, ok := selectionVal.(map[string]any); ok {
 			for key, value := range selectionMap {
 				processDetectionField(selectionKey, key, value, sigma, c, &fields, selectionNegations)
 			}
-		} else if selectionList, ok := selectionVal.([]interface{}); ok {
+		} else if selectionList, ok := selectionVal.([]any); ok {
+			// Handle list of strings
+			var stringList []string
 			for _, item := range selectionList {
-				if itemMap, ok := item.(map[string]interface{}); ok {
+				if str, ok := item.(string); ok {
+					stringList = append(stringList, str)
+				}
+			}
+			if len(stringList) == len(selectionList) {
+				processDetectionField(selectionKey, "", stringList, sigma, c, &fields, selectionNegations)
+				continue
+			}
+
+			for _, item := range selectionList {
+				if itemMap, ok := item.(map[string]any); ok {
 					for key, value := range itemMap {
 						processDetectionField(selectionKey, key, value, sigma, c, &fields, selectionNegations)
 					}
@@ -513,7 +544,7 @@ func GetFields(detection map[string]interface{}, sigma *SigmaRule, c *Config, se
 	return fields
 }
 
-func BuildRule(sigma *SigmaRule, url string, c *Config, detections map[string]interface{}, selectionNegations map[string]bool) WazuhRule {
+func BuildRule(sigma *SigmaRule, url string, c *Config, detections map[string]any, selectionNegations map[string]bool) WazuhRule {
 	LogIt(DEBUG, "", nil, c.Info, c.Debug)
 	var rule WazuhRule
 
@@ -584,9 +615,9 @@ func SkipSigmaRule(sigma *SigmaRule, c *Config) bool {
 	return false
 }
 
-func GetTopLevelLogicCondition(sigma SigmaRule, c *Config) map[string]interface{} {
+func GetTopLevelLogicCondition(sigma SigmaRule, c *Config) map[string]any {
 	LogIt(DEBUG, "", nil, c.Info, c.Debug)
-	detections := make(map[string]interface{})
+	detections := make(map[string]any)
 	v := reflect.ValueOf(sigma.Detection)
 	for _, k := range v.MapKeys() {
 		value := v.MapIndex(k)
@@ -596,7 +627,7 @@ func GetTopLevelLogicCondition(sigma SigmaRule, c *Config) map[string]interface{
 	return detections
 }
 
-func PrintValues(detections map[string]interface{}) {
+func PrintValues(detections map[string]any) {
 	for k, v := range detections {
 		fmt.Printf("%v - %v\n", k, v)
 	}
@@ -740,57 +771,7 @@ func convertToDNF(expr string) [][]string {
 	return parse(tokens)
 }
 
-func ReadYamlFile(path string, c *Config) {
-	LogIt(DEBUG, "", nil, c.Info, c.Debug)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		LogIt(ERROR, "", err, c.Info, c.Debug)
-		return
-	}
-	LogIt(INFO, path, nil, c.Info, c.Debug)
-	relPath, err := filepath.Rel(c.Sigma.RulesRoot, path)
-	if err != nil {
-		LogIt(ERROR, "", err, c.Info, c.Debug)
-		relPath = path
-	}
-	url := c.Sigma.BaseUrl + "/" + filepath.ToSlash(relPath)
-
-	var sigmaRule SigmaRule
-
-	err = yaml.Unmarshal(data, &sigmaRule)
-	if err != nil {
-		LogIt(ERROR, "", err, c.Info, c.Debug)
-		return
-	}
-
-	if SkipSigmaRule(&sigmaRule, c) {
-		return
-	}
-
-	detectionBytes, _ := yaml.Marshal(sigmaRule.Detection)
-	detectionString := string(detectionBytes)
-
-	if strings.Contains(detectionString, "timeframe:") {
-		LogIt(INFO, "Skip Sigma rule timeframe: "+sigmaRule.ID, nil, c.Info, c.Debug)
-		c.TrackSkips.TimeframeSkips++
-		c.TrackSkips.RulesSkipped++
-		return
-	}
-	if strings.Contains(detectionString, "|cidr:") {
-		LogIt(INFO, "Skip Sigma rule cidr: "+sigmaRule.ID, nil, c.Info, c.Debug)
-		c.TrackSkips.Cidr++
-		c.TrackSkips.RulesSkipped++
-		return
-	}
-
-	detections := GetTopLevelLogicCondition(sigmaRule, c)
-	condition, ok := detections["condition"].(string)
-	if !ok {
-		LogIt(ERROR, "condition is not a string", nil, c.Info, c.Debug)
-		return
-	}
-	condition = fixupCondition(condition)
-
+func PreprocessCondition(condition string, detections map[string]any) string {
 	// Pre-process condition to expand '1_of' and 'all_of'
 	re := regexp.MustCompile(`(not\s+)?(1_of|all_of)\s+(them|[a-zA-Z0-9_\*]+)`)
 	matches := re.FindAllStringSubmatch(condition, -1)
@@ -865,9 +846,10 @@ func ReadYamlFile(path string, c *Config) {
 			condition = strings.Replace(condition, match[0], replacement, 1)
 		}
 	}
+	return condition
+}
 
-	passingSets := convertToDNF(condition)
-
+func ProcessDnfSets(passingSets [][]string, detections map[string]any, sigmaRule *SigmaRule, url string, c *Config) {
 	for _, set := range passingSets { // Each 'set' is an AND group of selection names
 		isFalse := false
 		var newSet []string
@@ -885,64 +867,127 @@ func ReadYamlFile(path string, c *Config) {
 			continue // This whole AND group is false
 		}
 
-		// We need to build a base detection map for this 'set'
-		baseDetection := make(map[string]interface{})
-		selectionNegations := make(map[string]bool) // New map to store negation status per selection
-		hasListSelection := false
-		var listSelectionKey string
-		var listSelectionValue []interface{}
+		// Each 'set' from the DNF represents a potential Wazuh rule (a conjunction of conditions).
+		// However, a selection within that set can be a list of maps, which is an OR that requires
+		// expanding into multiple rules.
+		// detectionSets will hold all the possible detection maps after expanding any lists of maps.
+		detectionSets := []map[string]any{{}}
+		selectionNegations := make(map[string]bool)
 
 		for _, item := range newSet {
-			currentNegate := false // Negation for this specific item
+			currentNegate := false
 			if strings.HasPrefix(item, "not ") {
 				item = strings.TrimPrefix(item, "not ")
 				currentNegate = true
 			}
-			selectionNegations[item] = currentNegate // Store negation status for this item
+			selectionNegations[item] = currentNegate
 
-			// For now, let's assume 'item' is a direct selection name.
-			// Wildcards would complicate the 'listSelection' logic.
+			if val, isList := detections[item].([]any); isList {
+				isListOfMaps := false
+				if len(val) > 0 {
+					// Check if the first element is a map to determine the type of list
+					if _, ok := val[0].(map[string]any); ok {
+						isListOfMaps = true
+					}
+				}
 
-			if val, isList := detections[item].([]interface{}); isList {
-				// This selection is a list, meaning OR logic within it.
-				// We can only handle one such list per DNF set for now to keep it manageable.
-				if hasListSelection {
-					LogIt(WARN, fmt.Sprintf("Multiple list selections in one DNF set for rule: %s. Only the first list will be processed as OR.", sigmaRule.ID), nil, c.Info, c.Debug)
+				if isListOfMaps {
+					// This selection is a list of maps. This is an OR condition between the map items.
+					// We need to create a new Wazuh rule for each map in the list.
+					// We do this by creating a cartesian product of the existing detectionSets
+					// and the new list of maps.
+					var newDetectionSets []map[string]any
+					for _, dSet := range detectionSets {
+						for _, listItem := range val {
+							newDSet := make(map[string]any)
+							for k, v := range dSet {
+								newDSet[k] = v
+							}
+							newDSet[item] = listItem
+							newDetectionSets = append(newDetectionSets, newDSet)
+						}
+					}
+					detectionSets = newDetectionSets
 				} else {
-					hasListSelection = true
-					listSelectionKey = item
-					listSelectionValue = val
+					// This is a list of values (strings/ints). Treat it as a single selection
+					// that will be handled by processDetectionField to create a regex OR.
+					for _, dSet := range detectionSets {
+						dSet[item] = detections[item]
+					}
 				}
 			} else {
-				// This is a single selection, add it to the base detection
-				baseDetection[item] = detections[item]
+				// This is a single selection, not a list. Add it to all detection sets.
+				for _, dSet := range detectionSets {
+					dSet[item] = detections[item]
+				}
 			}
 		}
 
-		if hasListSelection {
-			// If there's a list selection, create a separate Wazuh rule for each item in the list
-			for _, listItem := range listSelectionValue {
-				currentDetection := make(map[string]interface{})
-				// Copy all base (AND) selections
-				for k, v := range baseDetection {
-					currentDetection[k] = v
-				}
-				// Add the current item from the list selection
-				currentDetection[listSelectionKey] = listItem
-
-				rule := BuildRule(&sigmaRule, url, c, currentDetection, selectionNegations)
-				if rule.ID != "" {
-					c.Wazuh.XmlRules.Rules = append(c.Wazuh.XmlRules.Rules, rule)
-				}
-			}
-		} else {
-			// No list selections, build one rule from the base detection
-			rule := BuildRule(&sigmaRule, url, c, baseDetection, selectionNegations)
+		for _, detection := range detectionSets {
+			rule := BuildRule(sigmaRule, url, c, detection, selectionNegations)
 			if rule.ID != "" {
 				c.Wazuh.XmlRules.Rules = append(c.Wazuh.XmlRules.Rules, rule)
 			}
 		}
 	}
+}
+
+func ReadYamlFile(path string, c *Config) {
+	LogIt(DEBUG, "", nil, c.Info, c.Debug)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		LogIt(ERROR, "", err, c.Info, c.Debug)
+		return
+	}
+	LogIt(INFO, path, nil, c.Info, c.Debug)
+	relPath, err := filepath.Rel(c.Sigma.RulesRoot, path)
+	if err != nil {
+		LogIt(ERROR, "", err, c.Info, c.Debug)
+		relPath = path
+	}
+	url := c.Sigma.BaseUrl + "/" + filepath.ToSlash(relPath)
+
+	var sigmaRule SigmaRule
+
+	err = yaml.Unmarshal(data, &sigmaRule)
+	if err != nil {
+		LogIt(ERROR, "", err, c.Info, c.Debug)
+		return
+	}
+
+	if SkipSigmaRule(&sigmaRule, c) {
+		return
+	}
+
+	detectionBytes, _ := yaml.Marshal(sigmaRule.Detection)
+	detectionString := string(detectionBytes)
+
+	if strings.Contains(detectionString, "timeframe:") {
+		LogIt(INFO, "Skip Sigma rule timeframe: "+sigmaRule.ID, nil, c.Info, c.Debug)
+		c.TrackSkips.TimeframeSkips++
+		c.TrackSkips.RulesSkipped++
+		return
+	}
+	if strings.Contains(detectionString, "|cidr:") {
+		LogIt(INFO, "Skip Sigma rule cidr: "+sigmaRule.ID, nil, c.Info, c.Debug)
+		c.TrackSkips.Cidr++
+		c.TrackSkips.RulesSkipped++
+		return
+	}
+
+	detections := GetTopLevelLogicCondition(sigmaRule, c)
+	condition, ok := detections["condition"].(string)
+	if !ok {
+		LogIt(ERROR, "condition is not a string", nil, c.Info, c.Debug)
+		return
+	}
+	condition = fixupCondition(condition)
+
+	condition = PreprocessCondition(condition, detections)
+
+	passingSets := convertToDNF(condition)
+
+	ProcessDnfSets(passingSets, detections, &sigmaRule, url, c)
 }
 
 func WriteWazuhXmlRules(c *Config) {
@@ -958,6 +1003,60 @@ func WriteWazuhXmlRules(c *Config) {
 	if _, err := c.Wazuh.WriteRules.WriteString("\n"); err != nil {
 		LogIt(ERROR, "", err, c.Info, c.Debug)
 	}
+}
+
+func WalkSigmaRules(c *Config) []string {
+	var sigmaRuleIds []string
+	err := filepath.Walk(c.Sigma.RulesRoot, func(path string, f os.FileInfo, err error) error {
+		if !f.IsDir() && strings.HasSuffix(path, ".yml") {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				LogIt(ERROR, "", err, c.Info, c.Debug)
+				return nil
+			}
+			var sigmaRule SigmaRule
+			err = yaml.Unmarshal(data, &sigmaRule)
+			if err != nil {
+				LogIt(ERROR, "", err, c.Info, c.Debug)
+				c.TrackSkips.ErrorCount++
+				return nil
+			}
+			if !slices.Contains(sigmaRuleIds, sigmaRule.ID) {
+				sigmaRuleIds = append(sigmaRuleIds, sigmaRule.ID)
+			}
+			c.getSigmaRules(path, f, err)
+		}
+		return nil
+	})
+	if err != nil {
+		LogIt(ERROR, c.Sigma.RulesRoot, err, c.Info, c.Debug)
+	}
+	return sigmaRuleIds
+}
+
+func PrintStats(c *Config, sigmaRuleIds []string) {
+	convertedSigmaRules := len(c.Ids.SigmaToWazuh)
+
+	fmt.Printf("\n\n***************************************************************************\n")
+	fmt.Printf(" Number of Sigma Experimental rules skipped: %d\n", c.TrackSkips.ExperimentalSkips)
+	fmt.Printf("    Number of Sigma TIMEFRAME rules skipped: %d\n", c.TrackSkips.TimeframeSkips)
+
+	fmt.Printf("        Number of Sigma PAREN rules skipped: %d\n", c.TrackSkips.ParenSkips)
+	fmt.Printf("         Number of Sigma CIDR rules skipped: %d\n", c.TrackSkips.Cidr)
+	fmt.Printf("         Number of Sigma NEAR rules skipped: %d\n", c.TrackSkips.NearSkips)
+	fmt.Printf("       Number of Sigma CONFIG rules skipped: %d\n", c.TrackSkips.HardSkipped)
+	fmt.Printf("        Number of Sigma ERROR rules skipped: %d\n", c.TrackSkips.ErrorCount)
+	fmt.Printf("---------------------------------------------------------------------------\n")
+	fmt.Printf("                  Total Sigma rules skipped: %d\n", c.TrackSkips.RulesSkipped)
+	fmt.Printf("                Total Sigma rules converted: %d\n", convertedSigmaRules)
+	fmt.Printf("---------------------------------------------------------------------------\n")
+	fmt.Printf("                  Total Wazuh rules created: %d\n", len(c.Wazuh.XmlRules.Rules))
+	fmt.Printf("---------------------------------------------------------------------------\n")
+	fmt.Printf("                          Total Sigma rules: %d\n", len(sigmaRuleIds))
+	if len(sigmaRuleIds) > 0 {
+		fmt.Printf("                    Sigma rules converted %%: %.2f\n", float64(convertedSigmaRules)/float64(len(sigmaRuleIds))*100)
+	}
+	fmt.Printf("***************************************************************************\n\n")
 }
 
 func main() {
@@ -989,31 +1088,7 @@ func main() {
 		return
 	}
 
-	var sigmaRuleIds []string
-	err = filepath.Walk(c.Sigma.RulesRoot, func(path string, f os.FileInfo, err error) error {
-		if !f.IsDir() && strings.HasSuffix(path, ".yml") {
-			data, err := os.ReadFile(path)
-			if err != nil {
-				LogIt(ERROR, "", err, c.Info, c.Debug)
-				return nil
-			}
-			var sigmaRule SigmaRule
-			err = yaml.Unmarshal(data, &sigmaRule)
-			if err != nil {
-				LogIt(ERROR, "", err, c.Info, c.Debug)
-				c.TrackSkips.ErrorCount++
-				return nil
-			}
-			if !slices.Contains(sigmaRuleIds, sigmaRule.ID) {
-				sigmaRuleIds = append(sigmaRuleIds, sigmaRule.ID)
-			}
-			c.getSigmaRules(path, f, err)
-		}
-		return nil
-	})
-	if err != nil {
-		LogIt(ERROR, c.Sigma.RulesRoot, err, c.Info, c.Debug)
-	}
+	sigmaRuleIds := WalkSigmaRules(c)
 
 	// build our xml rule file and write it
 	c.Wazuh.XmlRules.Name = "sigma,"
@@ -1035,28 +1110,7 @@ func main() {
 		LogIt(ERROR, "", err, c.Info, c.Debug)
 	}
 
-	convertedSigmaRules := len(c.Ids.SigmaToWazuh)
-
-	fmt.Printf("\n\n***************************************************************************\n")
-	fmt.Printf(" Number of Sigma Experimental rules skipped: %d\n", c.TrackSkips.ExperimentalSkips)
-	fmt.Printf("    Number of Sigma TIMEFRAME rules skipped: %d\n", c.TrackSkips.TimeframeSkips)
-
-	fmt.Printf("        Number of Sigma PAREN rules skipped: %d\n", c.TrackSkips.ParenSkips)
-	fmt.Printf("         Number of Sigma CIDR rules skipped: %d\n", c.TrackSkips.Cidr)
-	fmt.Printf("         Number of Sigma NEAR rules skipped: %d\n", c.TrackSkips.NearSkips)
-	fmt.Printf("       Number of Sigma CONFIG rules skipped: %d\n", c.TrackSkips.HardSkipped)
-	fmt.Printf("        Number of Sigma ERROR rules skipped: %d\n", c.TrackSkips.ErrorCount)
-	fmt.Printf("---------------------------------------------------------------------------\n")
-	fmt.Printf("                  Total Sigma rules skipped: %d\n", c.TrackSkips.RulesSkipped)
-	fmt.Printf("                Total Sigma rules converted: %d\n", convertedSigmaRules)
-	fmt.Printf("---------------------------------------------------------------------------\n")
-	fmt.Printf("                  Total Wazuh rules created: %d\n", len(c.Wazuh.XmlRules.Rules))
-	fmt.Printf("---------------------------------------------------------------------------\n")
-	fmt.Printf("                          Total Sigma rules: %d\n", len(sigmaRuleIds))
-	if len(sigmaRuleIds) > 0 {
-		fmt.Printf("                    Sigma rules converted %%: %.2f\n", float64(convertedSigmaRules)/float64(len(sigmaRuleIds))*100)
-	}
-	fmt.Printf("***************************************************************************\n\n")
+	PrintStats(c, sigmaRuleIds)
 }
 
 /*****************************************************************

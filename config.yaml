@@ -1,11 +1,11 @@
 Title: Sigma to Wazuh Converter Config
-Info: false   # Print out verbose information
-Debug: false  # Print out debug information
+Info: false # Print out verbose information
+Debug: false # Print out debug information
 Sigma:
   # root of the Sigma rules URL
   BaseUrl: https://github.com/SigmaHQ/sigma/tree/master/rules
   # Sigma rules location
-  RulesRoot: ./temp_rules
+  RulesRoot: ../sigma/rules
   # Convert only rules with status, comment out status' you don't want converted
   RuleStatus:
     - stable
@@ -36,7 +36,7 @@ Wazuh:
   # file that Wazuh rules will be written to
   RulesFile: ./sigma.xml
   # where to start rule ID numbering
-  # if you change this variable and want existing rules renumbered, 
+  # if you change this variable and want existing rules renumbered,
   #   then delete the file specified by rule_id_file before the next run
   RuleIdStart: 900000
   # file to track Wazuh rule id to Sigma rule ID use
@@ -80,7 +80,7 @@ Wazuh:
       sysmon: 184665, 185000, 185001, 185002, 185003, 185004, 185005, 185006, 185007, 185008, 185009, 185010, 185011, 185012, 185013, 184666, 184667, 184676, 184677, 184678, 184686, 184687, 184696, 184697, 184698, 184706, 184707, 184716, 184717, 184726, 184727, 184736, 184737, 184746, 184747, 184766, 184767, 184776
   ######################################################
   # Sigma to Wazuh field name mappings
-  # section should match the sigma product field; e.g. windows, linux, mac, apache, check point fw1 
+  # section should match the sigma product field; e.g. windows, linux, mac, apache, check point fw1
   # section/product should be lower case
   FieldMaps:
     Windows:
