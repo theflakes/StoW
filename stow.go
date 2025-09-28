@@ -403,6 +403,7 @@ func GetFieldValues(value any, fieldName string, c *Config) []string {
 
 // processDetectionField extracts and processes a single field from a Sigma detection.
 func processDetectionField(selectionKey string, key string, value any, sigma *SigmaRule, c *Config, fields *[]Field, selectionNegations map[string]bool) {
+	LogIt(INFO, fmt.Sprintf("processDetectionField key: %s, value: %v", key, value), nil, c.Info, c.Debug)
 	// Handle modifiers in the key
 	parts := strings.Split(key, "|")
 	fieldName := parts[0]
@@ -472,6 +473,7 @@ func processDetectionField(selectionKey string, key string, value any, sigma *Si
 				newField.Value = "(?i)" + regexp.QuoteMeta(v)
 			}
 			*fields = append(*fields, newField) // Append to the passed slice pointer
+			LogIt(INFO, fmt.Sprintf("processDetectionField appended field: %v", newField), nil, c.Info, c.Debug)
 		}
 		return // Return from helper function
 	}
@@ -507,10 +509,12 @@ func processDetectionField(selectionKey string, key string, value any, sigma *Si
 			field.Value = "(?i)" + value
 		}
 		*fields = append(*fields, field) // Append to the passed slice pointer
+		LogIt(INFO, fmt.Sprintf("processDetectionField appended field: %v", field), nil, c.Info, c.Debug)
 	}
 }
 
 func GetFields(detection map[string]any, sigma *SigmaRule, c *Config, selectionNegations map[string]bool) []Field {
+	LogIt(INFO, fmt.Sprintf("GetFields detection: %v", detection), nil, c.Info, c.Debug)
 	var fields []Field
 	for selectionKey, selectionVal := range detection {
 		if selectionMap, ok := selectionVal.(map[string]any); ok {
@@ -541,6 +545,7 @@ func GetFields(detection map[string]any, sigma *SigmaRule, c *Config, selectionN
 			processDetectionField(selectionKey, "", value, sigma, c, &fields, selectionNegations)
 		}
 	}
+	LogIt(INFO, fmt.Sprintf("GetFields fields: %v", fields), nil, c.Info, c.Debug)
 	return fields
 }
 
@@ -787,15 +792,18 @@ func convertToDNF(expr string) [][]string {
 	return parse(tokens)
 }
 
-func PreprocessCondition(condition string, detections map[string]any) string {
+func PreprocessCondition(condition string, detections map[string]any, c *Config) string {
+	LogIt(INFO, fmt.Sprintf("Original condition: %s", condition), nil, c.Info, c.Debug)
 	// Pre-process condition to expand '1_of' and 'all_of'
 	re := regexp.MustCompile(`(not\s+)?(1_of|all_of)\s+(them|[a-zA-Z0-9_\*]+)`)
 	matches := re.FindAllStringSubmatch(condition, -1)
 
 	for _, match := range matches {
+		LogIt(INFO, fmt.Sprintf("Found match: %v", match), nil, c.Info, c.Debug)
 		isNot := match[1] != ""
 		directive := match[2]
 		pattern := match[3]
+		LogIt(INFO, fmt.Sprintf("Pattern: %s", pattern), nil, c.Info, c.Debug)
 
 		var matchingSelections []string
 		wildcard := strings.HasSuffix(pattern, "*")
@@ -819,6 +827,7 @@ func PreprocessCondition(condition string, detections map[string]any) string {
 				}
 			}
 		}
+		LogIt(INFO, fmt.Sprintf("Matching selections: %v", matchingSelections), nil, c.Info, c.Debug)
 
 		if len(matchingSelections) > 0 {
 			var replacement string
@@ -828,9 +837,9 @@ func PreprocessCondition(condition string, detections map[string]any) string {
 					for _, s := range matchingSelections {
 						negatedSelections = append(negatedSelections, "not "+s)
 					}
-					replacement = "(" + strings.Join(negatedSelections, " and ") + ")"
+					replacement = " ( " + strings.Join(negatedSelections, " and ") + " ) "
 				} else {
-					replacement = "(" + strings.Join(matchingSelections, " or ") + ")"
+					replacement = " ( " + strings.Join(matchingSelections, " or ") + " ) "
 				}
 			} else { // all_of
 				if isNot {
@@ -838,12 +847,13 @@ func PreprocessCondition(condition string, detections map[string]any) string {
 					for _, s := range matchingSelections {
 						negatedSelections = append(negatedSelections, "not "+s)
 					}
-					replacement = "(" + strings.Join(negatedSelections, " or ") + ")"
+					replacement = " ( " + strings.Join(negatedSelections, " or ") + " ) "
 				} else {
-					replacement = "(" + strings.Join(matchingSelections, " and ") + ")"
+					replacement = " ( " + strings.Join(matchingSelections, " and ") + " ) "
 				}
 			}
 			condition = strings.Replace(condition, match[0], replacement, 1)
+			LogIt(INFO, fmt.Sprintf("New condition: %s", condition), nil, c.Info, c.Debug)
 		} else {
 			var replacement string
 			if directive == "1_of" {
@@ -860,6 +870,7 @@ func PreprocessCondition(condition string, detections map[string]any) string {
 				}
 			}
 			condition = strings.Replace(condition, match[0], replacement, 1)
+			LogIt(INFO, fmt.Sprintf("New condition: %s", condition), nil, c.Info, c.Debug)
 		}
 	}
 	return condition
@@ -999,7 +1010,7 @@ func ReadYamlFile(path string, c *Config) {
 	}
 	condition = fixupCondition(condition)
 
-	condition = PreprocessCondition(condition, detections)
+	condition = PreprocessCondition(condition, detections, c)
 
 	passingSets := convertToDNF(condition)
 
@@ -1138,8 +1149,8 @@ func getArgs(args []string, c *Config) (bool, bool) {
 	if len(args) == 1 {
 		return c.Info, c.Debug
 	}
-	infoArgs := []string{" -i", "--info"}
-	debugArgs := []string{" -d", "--debug"}
+	infoArgs := []string{"-i", "--info"}
+	debugArgs := []string{"-d", "--debug"}
 	for _, arg := range args {
 		switch {
 		case slices.Contains(infoArgs, arg):
