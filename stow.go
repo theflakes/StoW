@@ -169,9 +169,9 @@ type SigmaRule struct {
 		Service  string `yaml:"service"`
 		Category string `yaml:"category"`
 	} `yaml:"logsource"`
-	Detection      any `yaml:"detection"`
-	FalsePositives []string    `yaml:"falsepositives"`
-	Level          string      `yaml:"level"`
+	Detection      any      `yaml:"detection"`
+	FalsePositives []string `yaml:"falsepositives"`
+	Level          string   `yaml:"level"`
 }
 
 // outer rules xml
